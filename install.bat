@@ -7,33 +7,51 @@ echo  BrainSync Installer
 echo  ===================
 echo.
 
-REM ── Check Python ──────────────────────────────────────────────────────────
+REM ── Find Python ────────────────────────────────────────────────────────────
+set PYTHON=
+
 python --version >nul 2>&1
+if not errorlevel 1 (set PYTHON=python& goto :found_python)
+
+py --version >nul 2>&1
+if not errorlevel 1 (set PYTHON=py& goto :found_python)
+
+python3 --version >nul 2>&1
+if not errorlevel 1 (set PYTHON=python3& goto :found_python)
+
+echo  ERROR: Python not found.
+echo.
+echo  Please install Python 3.12+ from: https://python.org/downloads
+echo  During installation, make sure to check "Add Python to PATH".
+echo.
+echo  After installing, close this window and run install.bat again.
+pause
+exit /b 1
+
+:found_python
+for /f "tokens=*" %%v in ('%PYTHON% --version 2^>^&1') do set PY_VER=%%v
+echo  Found: %PY_VER%
+
+REM ── Install uv ─────────────────────────────────────────────────────────────
+uv --version >nul 2>&1
+if not errorlevel 1 goto :found_uv
+
+echo  Installing uv package manager...
+%PYTHON% -m pip install uv --quiet
 if errorlevel 1 (
-    echo  ERROR: Python not found.
-    echo  Install Python 3.12+ from https://python.org/downloads
-    echo  Make sure to check "Add Python to PATH" during installation.
+    echo  ERROR: Failed to install uv.
+    echo  Try running: %PYTHON% -m pip install uv
     pause
     exit /b 1
 )
+echo  uv installed.
 
-REM ── Install uv if missing ──────────────────────────────────────────────────
-uv --version >nul 2>&1
-if errorlevel 1 (
-    echo  Installing uv package manager...
-    pip install uv --quiet
-    if errorlevel 1 (
-        echo  ERROR: Failed to install uv. Check your internet connection.
-        pause
-        exit /b 1
-    )
-    echo  uv installed.
-)
-
+:found_uv
 REM ── Install dependencies ───────────────────────────────────────────────────
 echo  Installing dependencies...
-uv sync --quiet
+uv sync
 if errorlevel 1 (
+    echo.
     echo  ERROR: Failed to install dependencies.
     pause
     exit /b 1
