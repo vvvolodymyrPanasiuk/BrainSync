@@ -49,26 +49,26 @@ No manual filing. No inbox to process later. Notes are organized at the moment o
 
 ---
 
-### Option A — One-click install (recommended)
+### One file does everything
 
 ```bash
 git clone https://github.com/vvvolodymyrPanasiuk/BrainSync.git
 cd BrainSync
 ```
 
-Then double-click **`install.bat`** (Windows) or run **`bash install.sh`** (macOS / Linux).
+Then double-click **`start.bat`** (Windows) or run **`bash start.sh`** (macOS / Linux).
 
-The script will:
-1. Check that Python is available
-2. Install [`uv`](https://github.com/astral-sh/uv) — a fast Python package manager (if not already installed)
+**First run** — the script will:
+1. Check that Python 3.12+ is available
+2. Install [`uv`](https://github.com/astral-sh/uv) if needed
 3. Install all dependencies into an isolated environment
 4. Launch the interactive setup wizard — enter your vault path, bot token, user ID, and API key
 
-That's it. From now on, just run **`start.bat`** to launch the bot.
+**Every subsequent run** — if `config.yaml` already exists, setup is skipped and the bot starts immediately.
 
 ---
 
-### Option B — Manual install
+### Manual install (optional)
 
 If you prefer to do it step by step:
 
