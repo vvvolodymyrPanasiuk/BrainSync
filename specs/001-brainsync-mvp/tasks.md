@@ -35,17 +35,17 @@ description: "Task list for BrainSync MVP implementation"
 ⚠️ **CRITICAL**: No user story work can begin until this phase is complete.
 
 - [x] T005 Implement `AppConfig` dataclass hierarchy in `config/loader.py`: `AIConfig`, `VaultConfig`, `TelegramConfig`, `GitConfig`, `ScheduleConfig`, `AppConfig` — parse `config.yaml` via `pyyaml`
-- [ ] T006 Add config validation in `config/loader.py`: vault path exists, `allowed_user_ids` not empty warning, `api_key` not empty when provider=anthropic, `processing_mode` enum check, `schedule.*.time` HH:MM format, `monthly_review.day` 1–28
-- [ ] T007 [P] Implement `NoteType` enum in `vault_writer/vault/writer.py`: `NOTE`, `TASK`, `IDEA`, `JOURNAL`
-- [ ] T008 [P] Implement `ProcessingMode` enum in `vault_writer/ai/provider.py`: `MINIMAL`, `BALANCED`, `FULL`
-- [ ] T009 [P] Implement `VaultNote` dataclass in `vault_writer/vault/writer.py`: all fields per data-model.md including `title`, `date`, `categories`, `tags`, `moc`, `content`, `file_path`, `note_type`, `folder`, `note_number`
-- [ ] T010 [P] Implement `ClassificationResult` dataclass in `vault_writer/ai/classifier.py`: `note_type`, `topic`, `folder`, `parent_moc`, `title`, `confidence`
-- [ ] T011 [P] Implement `SessionStats` dataclass in `config/loader.py`: `tokens_consumed`, `last_note_path`, `notes_saved_today`, `vault_notes_total`
-- [ ] T012 [P] Create `AIProvider` abstract base class in `vault_writer/ai/provider.py` with single method `complete(prompt: str, max_tokens: int) -> str`
-- [ ] T013 Implement `AnthropicProvider(AIProvider)` in `vault_writer/ai/anthropic_provider.py`: use `anthropic` SDK, pass `api_key` from config, call `client.messages.create()`, return `response.content[0].text`
-- [ ] T014 [P] Create stub `OllamaProvider(AIProvider)` in `vault_writer/ai/ollama_provider.py` that raises `NotImplementedError` — placeholder for v1.1
-- [ ] T015 Implement `config/loader.py` `get_ai_provider(config: AppConfig) -> AIProvider` factory function: returns `AnthropicProvider` or raises for `ollama`
-- [ ] T016 [P] Create `logs/` directory and set up logging in `config/loader.py`: file + console handlers, respect `logging.level`, `logging.log_path`, `logging.log_to_file` — **never log `api_key` or `bot_token`**
+- [x] T006 Add config validation in `config/loader.py`: vault path exists, `allowed_user_ids` not empty warning, `api_key` not empty when provider=anthropic, `processing_mode` enum check, `schedule.*.time` HH:MM format, `monthly_review.day` 1–28
+- [x] T007 [P] Implement `NoteType` enum in `vault_writer/vault/writer.py`: `NOTE`, `TASK`, `IDEA`, `JOURNAL`
+- [x] T008 [P] Implement `ProcessingMode` enum in `vault_writer/ai/provider.py`: `MINIMAL`, `BALANCED`, `FULL`
+- [x] T009 [P] Implement `VaultNote` dataclass in `vault_writer/vault/writer.py`: all fields per data-model.md including `title`, `date`, `categories`, `tags`, `moc`, `content`, `file_path`, `note_type`, `folder`, `note_number`
+- [x] T010 [P] Implement `ClassificationResult` dataclass in `vault_writer/ai/classifier.py`: `note_type`, `topic`, `folder`, `parent_moc`, `title`, `confidence`
+- [x] T011 [P] Implement `SessionStats` dataclass in `config/loader.py`: `tokens_consumed`, `last_note_path`, `notes_saved_today`, `vault_notes_total`
+- [x] T012 [P] Create `AIProvider` abstract base class in `vault_writer/ai/provider.py` with single method `complete(prompt: str, max_tokens: int) -> str`
+- [x] T013 Implement `AnthropicProvider(AIProvider)` in `vault_writer/ai/anthropic_provider.py`: use `anthropic` SDK, pass `api_key` from config, call `client.messages.create()`, return `response.content[0].text`
+- [x] T014 [P] Create stub `OllamaProvider(AIProvider)` in `vault_writer/ai/ollama_provider.py` that raises `NotImplementedError` — placeholder for v1.1
+- [x] T015 Implement `config/loader.py` `get_ai_provider(config: AppConfig) -> AIProvider` factory function: returns `AnthropicProvider` or raises for `ollama`
+- [x] T016 [P] Create `logs/` directory and set up logging in `config/loader.py`: file + console handlers, respect `logging.level`, `logging.log_path`, `logging.log_to_file` — **never log `api_key` or `bot_token`**
 
 **Checkpoint**: Config loads, enums and dataclasses defined, AIProvider returns responses from Anthropic. All user stories can now begin.
 
