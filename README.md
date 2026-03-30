@@ -1,123 +1,161 @@
 # 🧠 BrainSync
 
-> Local AI-powered personal knowledge management — capture thoughts from Telegram, structure them with Claude AI, save to Obsidian vault.
+**A local AI-powered personal knowledge management system.**
 
-BrainSync — це фонова служба, яка перетворює сирі думки з Telegram на структуровані нотатки в Obsidian. Ти пишеш у бот — він класифікує, форматує і зберігає нотатку у правильній папці з frontmatter, MoC-посиланнями та wikilinks. Все локально, крім AI API.
+Send a message to your Telegram bot → Claude AI classifies and formats it → a structured Markdown note appears in your Obsidian vault. That's it.
 
----
-
-## Можливості
-
-- **Telegram → Obsidian**: пишеш думку в бот — отримуєш структуровану `.md` нотатку
-- **AI-класифікація**: Claude автоматично визначає тип (note / task / idea / journal), тему і папку
-- **Три режими обробки**: `minimal` (0–1 AI виклики), `balanced` (1–2), `full` (2–3 + wikilinks)
-- **MoC (Map of Content)**: автоматичне оновлення індексних файлів при додаванні нотаток
-- **Пошук**: `/search Redis` — повнотекстовий пошук по vault без AI
-- **Scheduled summaries**: щоденний / тижневий / місячний огляд у Telegram
-- **Git sync**: автоматичний commit і push до remote після кожної нотатки
-- **MCP server**: `vault_writer/server.py` реєструється як MCP сервер у Claude Code
-- **Inline prefixes**: `задача: купити молоко` без команди — автовизначення типу
+BrainSync runs as a background service on your machine. Everything stays local except the AI API call. No cloud storage, no subscriptions, no web dashboard — just your thoughts, organized automatically.
 
 ---
 
-## Швидкий старт
+## Why BrainSync?
 
-### Вимоги
+Most note-taking friction happens at capture time. You have a thought, but turning it into a structured note requires opening an app, picking a folder, writing frontmatter, linking related notes — so you skip it, or dump it in an inbox that never gets processed.
+
+BrainSync removes that friction completely:
+
+- **You write one message** in Telegram (where you already are)
+- **AI does the organizing** — detects the topic, picks the right folder, formats the content
+- **A properly structured note** appears in your Obsidian vault instantly
+
+No manual filing. No inbox to process later. Notes are organized at the moment of capture.
+
+---
+
+## Features
+
+- **Telegram → Obsidian** — plain text in, structured `.md` note out
+- **AI classification** — Claude automatically detects type (note / task / idea / journal), topic, and destination folder
+- **Three processing modes** — `minimal` (fast, 0–1 AI calls), `balanced` (1–2), `full` (2–3 + auto wikilinks)
+- **Map of Content (MoC)** — index files auto-updated when new notes are added to a topic
+- **Vault search** — `/search Redis` returns matching notes with excerpts, zero AI calls
+- **Scheduled digests** — daily, weekly, and monthly summaries sent automatically to Telegram
+- **Git sync** — vault auto-committed and pushed after every note
+- **MCP server** — `vault_writer/server.py` registers as an MCP server in Claude Code sessions
+- **Inline prefixes** — `task: buy milk` or `задача: купити молоко` without a slash command
+
+---
+
+## Quick Start
+
+### Prerequisites
 
 - Python 3.12+
-- Git
-- Obsidian vault (наприклад, `C:\SecondaryBrain`)
-- [Telegram bot token](https://t.me/BotFather)
-- [Anthropic API key](https://console.anthropic.com)
-- Твій Telegram user ID ([@userinfobot](https://t.me/userinfobot))
+- Git installed and configured
+- An existing [Obsidian](https://obsidian.md) vault (e.g. `C:\SecondaryBrain`)
+- A Telegram bot token — create one via [@BotFather](https://t.me/BotFather)
+- Your Telegram user ID — get it from [@userinfobot](https://t.me/userinfobot)
+- An [Anthropic API key](https://console.anthropic.com)
 
-### Встановлення
+### Installation
 
 ```bash
-# 1. Клонуй репозиторій
+# 1. Clone the repository
 git clone https://github.com/vvvolodymyrPanasiuk/BrainSync.git
 cd BrainSync
 
-# 2. Створи virtual environment
+# 2. Create and activate a virtual environment
 python -m venv .venv
 .venv\Scripts\activate        # Windows
-# source .venv/bin/activate   # Unix
+# source .venv/bin/activate   # macOS / Linux
 
-# 3. Встанови залежності
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Запусти інсталятор
+# 4. Run the interactive installer
 python setup.py
 ```
 
-Інсталятор запитає vault path, токен бота, user ID, API key, режим обробки та git налаштування — і згенерує `config.yaml`.
+The installer will ask for your vault path, bot token, user ID, API key, processing mode, and git settings — then generate `config.yaml` and verify all connections.
 
-### Запуск
+### Running the bot
 
 ```bash
 # Windows
 start.bat
 
-# Unix
+# macOS / Linux
 bash start.sh
 
-# Або напряму
+# Or directly
 python main.py
 ```
 
-Бот запускається у foreground. `Ctrl+C` — зупинити.
+The bot runs in the foreground. Press `Ctrl+C` to stop.
 
 ---
 
-## Команди бота
+## Bot Commands
 
-| Команда | Опис |
-|---------|------|
-| `/note <текст>` | Зберегти нотатку |
-| `/task <текст>` | Зберегти задачу |
-| `/idea <текст>` | Зберегти ідею |
-| `/journal <текст>` | Запис у щоденник |
-| `/search <запит>` | Пошук по vault |
-| `/mode minimal\|balanced\|full` | Змінити режим обробки |
-| `/status` | Статус бота і статистика |
-| `/help` | Список команд |
+| Command | Description |
+|---------|-------------|
+| `/note <text>` | Save a note |
+| `/task <text>` | Save a task |
+| `/idea <text>` | Save an idea |
+| `/journal <text>` | Save a journal entry |
+| `/search <query>` | Search the vault |
+| `/mode minimal\|balanced\|full` | Change processing mode |
+| `/status` | Show bot status and session stats |
+| `/help` | List all commands |
 
-**Inline prefixes** (без команди):
+**Inline prefixes** — no slash command needed:
 
 ```
-нотатка: ...    note: ...
-задача: ...     task: ...     todo: ...
-ідея: ...       idea: ...
-день: ...       journal: ...
+note: ...       нотатка: ...
+task: ...       задача: ...     todo: ...
+idea: ...       ідея: ...
+journal: ...    день: ...
 ```
 
-Будь-який текст без префікса → AI-класифікація автоматично.
+Any plain message without a prefix is automatically classified by AI.
+
+**Example session:**
+
+```
+You:  learned that CQRS separates read and write models
+Bot:  ✓ Saved → Architecture/0004 CQRS pattern.md
+
+You:  /task buy groceries
+Bot:  ✓ Saved → Tasks/0012 buy groceries.md
+
+You:  /search Redis
+Bot:  🔍 Found 2 notes for "Redis":
+      1. Architecture/0003 Redis caching.md
+         ...Redis is used for session caching...
+
+You:  /mode full
+Bot:  ✓ Mode changed to: full
+      ⚠️ Takes effect after bot restart.
+```
 
 ---
 
-## Архітектура
+## Architecture
+
+### Project structure
 
 ```
 BrainSync/
 │
-├── main.py                        # Entry point: запускає Telegram bot
-├── setup.py                       # Інтерактивний інсталятор
+├── main.py                        # Entry point — starts the Telegram bot
+├── setup.py                       # Interactive installer
 ├── start.bat / start.sh           # Launch scripts
+├── config.yaml                    # Generated by setup.py — never committed
 │
 ├── config/
-│   └── loader.py                  # Парсинг config.yaml → AppConfig dataclasses
-│                                  # Валідація, logging setup, get_ai_provider()
+│   └── loader.py                  # Parses config.yaml → AppConfig dataclasses
+│                                  # Validation, logging setup, AI provider factory
 │
-├── vault_writer/                  # Ядро системи (shared library)
-│   ├── server.py                  # MCP server (окремий процес, stdio transport)
+├── vault_writer/                  # Core library — shared by both processes
+│   ├── server.py                  # MCP server (standalone process, stdio transport)
 │   │
 │   ├── ai/
-│   │   ├── provider.py            # AIProvider ABC + ProcessingMode enum
-│   │   ├── anthropic_provider.py  # AnthropicProvider (claude-sonnet-4-6)
-│   │   ├── ollama_provider.py     # OllamaProvider stub (v1.1)
+│   │   ├── provider.py            # AIProvider abstract base + ProcessingMode enum
+│   │   ├── anthropic_provider.py  # Claude implementation
+│   │   ├── ollama_provider.py     # Ollama stub (v1.1)
 │   │   ├── classifier.py          # classify() → ClassificationResult
-│   │   ├── formatter.py           # format_note() → markdown body
-│   │   └── enricher.py            # add_wikilinks() (full mode)
+│   │   ├── formatter.py           # format_note() → structured markdown body
+│   │   └── enricher.py            # add_wikilinks() — full mode only
 │   │
 │   ├── vault/
 │   │   ├── writer.py              # write_note(), update_moc(), sequential numbering
@@ -125,148 +163,153 @@ BrainSync/
 │   │   └── indexer.py             # build_index(), update_index() → VaultIndex
 │   │
 │   └── tools/                     # MCP tool handlers
-│       ├── create_note.py         # Головний orchestrator (classify→format→enrich→write→MoC)
-│       ├── search_notes.py        # Повнотекстовий пошук (0 AI calls)
-│       ├── classify_content.py    # Класифікація тексту
-│       ├── update_moc.py          # Оновлення Map of Content
-│       └── get_vault_index.py     # Snapshot vault index
+│       ├── create_note.py         # Main orchestrator (classify→format→enrich→write→MoC)
+│       ├── search_notes.py        # Full-text search (zero AI calls)
+│       ├── classify_content.py    # Text classification
+│       ├── update_moc.py          # Map of Content updater
+│       └── get_vault_index.py     # Vault index snapshot
 │
 ├── telegram/
 │   ├── bot.py                     # PTB Application setup + job queue
-│   ├── formatter.py               # Форматування повідомлень (Ukrainian)
+│   ├── formatter.py               # Message formatters
 │   └── handlers/
-│       ├── commands.py            # /note /task /idea /journal /search /mode /status /help
-│       ├── message.py             # Plain-text handler + prefix detection + RetryAfter
-│       └── schedule.py            # Daily/weekly/monthly summary jobs
+│       ├── commands.py            # All slash command handlers
+│       ├── message.py             # Plain-text handler + prefix detection + retry
+│       └── schedule.py            # Daily / weekly / monthly digest jobs
 │
 ├── git_sync/
 │   └── sync.py                    # commit_note() + push_if_due()
 │
 └── .brain/
-    ├── AGENTS.md                  # Universal AI instructions
+    ├── AGENTS.md                  # Universal AI instructions for the vault
     └── skills/
         ├── vault-writer.md        # Folder naming, numbering, MoC rules
-        ├── classifier.md          # Classification guidelines + JSON format
-        └── obsidian-rules.md      # Frontmatter, tags, wikilink syntax
+        ├── classifier.md          # Classification guidelines + JSON output format
+        └── obsidian-rules.md      # Frontmatter schema, tags, wikilink syntax
 ```
 
-### Потік даних: від повідомлення до нотатки
+### Note creation flow
+
+From the moment you send a Telegram message to the moment the file appears in your vault:
 
 ```
-Telegram message
-       │
-       ▼
-  auth_check()          ← відхиляє неавторизованих
-       │
-       ▼
-  detect_prefix()       ← "задача:" → NoteType.TASK (0 AI calls)
-       │
-       ▼
-  [if no prefix]
-  classify()            ← AI call #1: тип + папка + заголовок
-       │
-       ▼
-  [if balanced/full]
-  format_note()         ← AI call #2: структурований markdown body
-       │
-       ▼
-  [if full]
-  add_wikilinks()       ← AI call #3: wikilinks з vault index
-       │
-       ▼
-  write_note()          ← запис файлу (threading.Lock)
-       │
-       ▼
-  create_moc_if_missing()
-  update_moc()          ← оновлення "## 🔑 Main sections"
-       │
-       ▼
-  update_index()        ← O(1) оновлення VaultIndex
-       │
-       ▼
-  commit_note()         ← git commit (якщо enabled)
-       │
-       ▼
-  "✓ Збережено → Architecture/0004 CQRS патерн.md"
+Telegram message received
+         │
+         ▼
+   auth_check()              Reject unauthorized user IDs silently
+         │
+         ▼
+   detect_prefix()           "task: ..." → NoteType.TASK  (0 AI calls)
+         │
+         ▼
+   [no prefix detected]
+   classify()                AI call #1 — type + folder + title
+         │
+         ▼
+   [balanced or full mode]
+   format_note()             AI call #2 — structured markdown body
+         │
+         ▼
+   [full mode only]
+   add_wikilinks()           AI call #3 — related notes from vault index
+         │
+         ▼
+   write_note()              File written under threading.Lock
+         │
+         ▼
+   create_moc_if_missing()
+   update_moc()              Appends "- [[0004 Title]]" to ## 🔑 Main sections
+         │
+         ▼
+   update_index()            O(1) in-memory VaultIndex update
+         │
+         ▼
+   commit_note()             git commit (if enabled)
+         │
+         ▼
+   "✓ Saved → Architecture/0004 CQRS pattern.md"
 ```
 
-### Два незалежних процеси
+### Two independent processes
+
+BrainSync runs as two separate processes that both use `vault_writer/` as a shared Python library:
 
 ```
-┌─────────────────────────────┐     ┌──────────────────────────────┐
-│   main.py (Telegram bot)    │     │  vault_writer/server.py      │
-│                             │     │  (MCP server)                │
-│  - run_polling()            │     │  - stdio transport           │
-│  - handlers                 │     │  - 5 MCP tools               │
-│  - scheduled jobs           │     │  - launched by Claude Code   │
-│                             │     │                              │
-│  imports vault_writer/      │     │  imports vault_writer/       │
-│  as Python library          │     │  as Python library           │
-└─────────────────────────────┘     └──────────────────────────────┘
+┌──────────────────────────────┐     ┌──────────────────────────────┐
+│   main.py                    │     │   vault_writer/server.py     │
+│   (Telegram bot)             │     │   (MCP server)               │
+│                              │     │                              │
+│   run_polling()              │     │   stdio transport            │
+│   message handlers           │     │   5 MCP tools                │
+│   scheduled jobs             │     │   started by Claude Code     │
+│                              │     │                              │
+│   imports vault_writer/      │     │   imports vault_writer/      │
+│   directly as library        │     │   directly as library        │
+└──────────────────────────────┘     └──────────────────────────────┘
 ```
 
-> **Чому два процеси?** MCP stdio transport захоплює stdin/stdout — несумісно з PTB `run_polling()` в одному процесі. Обидва компоненти імпортують `vault_writer/` напряму як Python library без IPC.
+> **Why two processes?** The MCP SDK's stdio transport takes ownership of stdin/stdout, which is incompatible with PTB's `run_polling()` event loop in the same process. Keeping them separate is simpler than any workaround — and both components share the same `vault_writer/` library with no IPC needed.
 
 ---
 
-## Конфігурація (`config.yaml`)
+## Configuration
 
-Генерується автоматично через `python setup.py`. Ніколи не комітується в git.
+`config.yaml` is generated by `python setup.py` and is **never committed to git**. Below is the full reference.
 
-### AI
+### AI settings
 
 ```yaml
 ai:
-  provider: "anthropic"           # "anthropic" | "ollama" (ollama — v1.1)
-  model: "claude-sonnet-4-6"      # Anthropic model ID
+  provider: "anthropic"           # "anthropic" | "ollama" (ollama planned for v1.1)
+  model: "claude-sonnet-4-6"      # Model ID used for all AI calls
   ollama_url: "http://localhost:11434"
-  processing_mode: "balanced"     # "minimal" | "balanced" | "full"
-  agents_file: ".brain/AGENTS.md" # Інструкції для AI
-  skills_path: ".brain/skills/"   # Папка зі skills
-  inject_vault_index: true        # Передавати список тем AI при класифікації
-  max_context_tokens: 4000        # Ліміт токенів для vault context
-  api_key: ""                     # ⚠️ НІКОЛИ не логується і не комітується
+  processing_mode: "balanced"     # See processing modes table below
+  agents_file: ".brain/AGENTS.md" # Universal AI instructions injected into every prompt
+  skills_path: ".brain/skills/"   # Folder containing skill-specific instructions
+  inject_vault_index: true        # Pass known topics to AI during classification
+  max_context_tokens: 4000        # Token budget for vault context in prompts
+  api_key: ""                     # ⚠️  Never logged, never committed, never sent to AI as content
 ```
 
-**Режими обробки:**
+**Processing modes:**
 
-| Режим | AI виклики | Що робить |
-|-------|-----------|-----------|
-| `minimal` | 0–1 | Класифікація (або нічого якщо є префікс) |
-| `balanced` | 1–2 | Класифікація + форматування |
-| `full` | 2–3 | Класифікація + форматування + wikilinks |
+| Mode | AI calls | What happens |
+|------|----------|--------------|
+| `minimal` | 0–1 | Classification only (skipped if prefix is detected) |
+| `balanced` | 1–2 | Classification + content formatting |
+| `full` | 2–3 | Classification + formatting + wikilink enrichment |
 
-Змінити без перезапуску: `/mode balanced` — записує в `config.yaml`, набирає чинності після рестарту.
+Change mode at runtime with `/mode balanced` — the bot writes `config.yaml` immediately and confirms. The new mode takes effect after the next restart.
 
-### Vault
+### Vault settings
 
 ```yaml
 vault:
-  path: "C:\\SecondaryBrain"      # Абсолютний шлях до Obsidian vault
-  language: "uk"                  # Мова нотаток для AI prompts
+  path: "C:\\SecondaryBrain"      # Absolute path to your Obsidian vault directory
+  language: "uk"                  # Language hint passed to AI formatting prompts
 ```
 
-### Enrichment
+### Enrichment settings
 
 ```yaml
 enrichment:
-  add_wikilinks: true             # Додавати wikilinks (тільки full mode)
-  update_moc: true                # Оновлювати MoC при кожній нотатці
-  max_related_notes: 5            # Максимум wikilinks у full mode
-  scan_vault_on_start: true       # Rebuild vault index при запуску
+  add_wikilinks: true             # Auto-add wikilinks to related notes (full mode only)
+  update_moc: true                # Append wikilink to parent MoC after every note
+  max_related_notes: 5            # Maximum wikilinks injected in full mode
+  scan_vault_on_start: true       # Rebuild the in-memory vault index at startup
 ```
 
-### Telegram
+### Telegram settings
 
 ```yaml
 telegram:
-  bot_token: ""                   # ⚠️ НІКОЛИ не логується
-  allowed_user_ids: [123456789]   # Тільки ці user ID можуть писати боту
+  bot_token: ""                   # ⚠️  Never logged
+  allowed_user_ids: [123456789]   # Only these Telegram user IDs can interact with the bot
 ```
 
-> Якщо `allowed_user_ids` порожній — бот відхиляє всі повідомлення і логує WARNING.
+If `allowed_user_ids` is empty, the bot logs a warning and rejects every message.
 
-### Prefixes
+### Inline prefix settings
 
 ```yaml
 prefixes:
@@ -276,9 +319,9 @@ prefixes:
   journal: ["день:", "journal:"]
 ```
 
-Кастомізуй під себе — регістр ігнорується при матчингу.
+Matching is case-insensitive. Add or remove prefixes as you like.
 
-### Git
+### Git sync settings
 
 ```yaml
 git:
@@ -288,47 +331,89 @@ git:
   push_remote: true
   remote: "origin"
   branch: "main"
-  push_interval_minutes: 30       # Пуш не частіше раз на 30 хв
+  push_interval_minutes: 30       # Push at most once every 30 minutes
 ```
 
-Push з silent failure — якщо remote недоступний, бот продовжує роботу.
+Push failures are silent — the bot logs a warning and continues. Your notes are always saved locally even if the remote is unreachable.
 
-### Schedule
+### Scheduled digest settings
 
 ```yaml
 schedule:
   daily_summary:
     enabled: true
-    time: "21:00"                 # HH:MM local time
+    time: "21:00"                 # HH:MM in local time
   weekly_review:
     enabled: true
-    day: "sunday"
+    day: "sunday"                 # monday … sunday
     time: "20:00"
   monthly_review:
     enabled: true
-    day: 1                        # День місяця: 1–28
+    day: 1                        # Day of month: 1–28
     time: "10:00"
 ```
 
-Щоденний підсумок містить нотатки за сьогодні + відкриті задачі (`- [ ] ...`).
-Тижневий — кількість нотаток по темах за тиждень.
-Місячний — нотатки цього місяця + нові теми.
+- **Daily digest** — today's notes + all pending tasks (`- [ ] ...` items across task-type notes)
+- **Weekly review** — note count grouped by topic for the past week
+- **Monthly review** — notes added this month + new topics introduced
 
-### Logging
+### Logging settings
 
 ```yaml
 logging:
   level: "info"                   # "debug" | "info" | "warn" | "error"
   log_to_file: true
   log_path: "logs/vault.log"
-  log_ai_decisions: true          # Логує: тип + папка + confidence (БЕЗ тексту нотатки)
+  log_ai_decisions: true          # Logs: type + folder + confidence only — never note content
 ```
 
 ---
 
-## Реєстрація як MCP сервер у Claude Code
+## Note format in the vault
 
-Додай до `.claude/mcp_servers.json` в будь-якому проекті:
+Every note written by BrainSync follows this structure:
+
+```markdown
+---
+title: "CQRS Pattern"
+date: 2026-03-30
+categories: [Architecture]
+tags: [areas/architecture, types/notes]
+MoC: "[[0 Architecture]]"
+---
+
+## Description
+
+CQRS (Command Query Responsibility Segregation) separates the read and write models
+of an application. Commands mutate state, queries return data — never both.
+
+## Conclusions
+
+Use CQRS when read and write operations have significantly different performance
+or scaling requirements. Pairs naturally with Event Sourcing.
+
+## Links
+
+- [[0003 Event Sourcing]]
+- [[0001 DDD Basics]]
+```
+
+**File naming:** `NNNN Title.md` — 4-digit zero-padded sequential number within the folder.
+**MoC files:** `0 TopicName.md` — always at the root of their folder, never counted as regular notes.
+
+**Task items** use [Obsidian Tasks](https://github.com/obsidian-tasks-group/obsidian-tasks) format:
+```
+- [ ] Pending task
+- [x] Completed task
+```
+
+---
+
+## Using as a Claude Code MCP Server
+
+`vault_writer/server.py` can be registered as an MCP server in any Claude Code project, letting you create and search vault notes directly from a coding session.
+
+Add to `.claude/mcp_servers.json` in your project:
 
 ```json
 {
@@ -341,65 +426,35 @@ logging:
 }
 ```
 
-Доступні MCP інструменти:
+Available tools:
 
-| Tool | Опис |
-|------|------|
-| `create_note` | Створити нотатку (classify → format → write → MoC) |
-| `search_notes` | Пошук по vault |
-| `classify_content` | Класифікувати текст |
-| `update_moc` | Оновити Map of Content |
-| `get_vault_index` | Отримати snapshot vault index |
-
----
-
-## Формат нотаток у vault
-
-```markdown
----
-title: "CQRS патерн"
-date: 2026-03-30
-categories: [Architecture]
-tags: [areas/architecture, types/notes]
-MoC: "[[0 Architecture]]"
----
-
-## Description
-
-CQRS (Command Query Responsibility Segregation) розділяє моделі читання і запису...
-
-## Conclusions
-
-Використовувати коли read і write мають різні вимоги до продуктивності.
-
-## Links
-
-- [[0003 Event Sourcing]]
-- [[0001 DDD основи]]
-```
-
-**Іменування файлів:** `NNNN Title.md` — 4-цифровий порядковий номер у межах папки.
-**MoC файли:** `0 TopicName.md` — завжди на початку папки.
+| Tool | Description |
+|------|-------------|
+| `create_note` | Create a note (classify → format → write → update MoC) |
+| `search_notes` | Full-text search across the vault |
+| `classify_content` | Classify text and return type, folder, and title |
+| `update_moc` | Manually update a Map of Content file |
+| `get_vault_index` | Get a snapshot of the current vault index |
 
 ---
 
-## Безпека
+## Security
 
-- `config.yaml` в `.gitignore` — ніколи не потрапляє в репозиторій
-- `api_key` і `bot_token` ніколи не логуються і не передаються в AI prompts
-- `log_ai_decisions` логує лише `type`, `folder`, `confidence` — без тексту нотаток
-- Бот відповідає тільки user ID зі списку `allowed_user_ids`
-- Неавторизовані спроби логуються на рівні `warn`
+- `config.yaml` is in `.gitignore` and will never be committed
+- `api_key` and `bot_token` are never written to logs, console output, or AI prompts
+- `log_ai_decisions: true` logs only `type`, `folder`, and `confidence` — never the content of your notes
+- The bot only responds to user IDs listed in `allowed_user_ids`
+- Unauthorized access attempts are logged at `warn` level (user ID + timestamp only)
 
 ---
 
-## Залежності
+## Dependencies
 
-| Пакет | Версія | Призначення |
-|-------|--------|-------------|
-| `python-telegram-bot` | ≥20.0 | Async Telegram bot + job scheduler |
-| `anthropic` | latest | Claude AI SDK |
-| `mcp` | latest | Model Context Protocol server |
-| `pyyaml` | latest | Читання/запис config.yaml |
-| `gitpython` | latest | Git операції у vault |
-| `pytest` | latest | Тести |
+| Package | Purpose |
+|---------|---------|
+| `python-telegram-bot >= 20.0` | Async Telegram bot framework with built-in job scheduler |
+| `anthropic` | Official Claude AI SDK |
+| `mcp` | Model Context Protocol server (stdio transport) |
+| `pyyaml` | Read and write `config.yaml` |
+| `gitpython` | Programmatic git operations on the vault |
+| `pytest` | Testing |
