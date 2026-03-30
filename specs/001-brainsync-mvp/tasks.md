@@ -1,4 +1,4 @@
----
+﻿---
 description: "Task list for BrainSync MVP implementation"
 ---
 
@@ -59,56 +59,56 @@ description: "Task list for BrainSync MVP implementation"
 
 ### Vault Layer
 
-- [ ] T017 [P] [US1] Implement `vault/indexer.py` `VaultIndex` dataclass and `build_index(vault_path: str) -> VaultIndex`: walk vault directory, parse YAML frontmatter from each `.md` file, populate `notes`, `mocs`, `topics`, `tags`, `total_notes`, `last_updated`
-- [ ] T018 [P] [US1] Implement `vault/reader.py` `read_frontmatter(file_path: str) -> dict`: parse YAML block between `---` delimiters at top of `.md` file
-- [ ] T019 [US1] Implement `vault/writer.py` `_write_lock = threading.Lock()` and `next_note_number(folder: Path) -> int`: scan existing `NNNN *.md` files, return `max + 1`, all under lock
-- [ ] T020 [US1] Implement `vault/writer.py` `write_note(note: VaultNote, vault_path: str) -> str`: build frontmatter YAML + markdown body (Description / Conclusions / Links sections), write file, return vault-relative path — under `_write_lock`
-- [ ] T021 [US1] Implement `vault/writer.py` `create_folder_if_missing(folder: Path)`: `folder.mkdir(parents=True, exist_ok=True)`
-- [ ] T022 [US1] Implement `vault/writer.py` `update_moc(moc_path: str, note_path: str, note_title: str, vault_path: str)`: read MoC file, append `- [[NNNN Title]]` under `## 🔑 Main sections`, write back
-- [ ] T023 [US1] Implement `vault/writer.py` `create_moc_if_missing(topic: str, vault_path: str) -> str`: if `0 {topic}.md` does not exist, create it from MoC template; return vault-relative path
-- [ ] T024 [US1] Implement `vault/indexer.py` `update_index(index: VaultIndex, note: VaultNote)`: insert/replace single note entry in `index.notes`, update `topics`, `tags`, `total_notes`, `last_updated` — O(1)
+- [x] T017 [P] [US1] Implement `vault/indexer.py` `VaultIndex` dataclass and `build_index(vault_path: str) -> VaultIndex`: walk vault directory, parse YAML frontmatter from each `.md` file, populate `notes`, `mocs`, `topics`, `tags`, `total_notes`, `last_updated`
+- [x] T018 [P] [US1] Implement `vault/reader.py` `read_frontmatter(file_path: str) -> dict`: parse YAML block between `---` delimiters at top of `.md` file
+- [x] T019 [US1] Implement `vault/writer.py` `_write_lock = threading.Lock()` and `next_note_number(folder: Path) -> int`: scan existing `NNNN *.md` files, return `max + 1`, all under lock
+- [x] T020 [US1] Implement `vault/writer.py` `write_note(note: VaultNote, vault_path: str) -> str`: build frontmatter YAML + markdown body (Description / Conclusions / Links sections), write file, return vault-relative path — under `_write_lock`
+- [x] T021 [US1] Implement `vault/writer.py` `create_folder_if_missing(folder: Path)`: `folder.mkdir(parents=True, exist_ok=True)`
+- [x] T022 [US1] Implement `vault/writer.py` `update_moc(moc_path: str, note_path: str, note_title: str, vault_path: str)`: read MoC file, append `- [[NNNN Title]]` under `## 🔑 Main sections`, write back
+- [x] T023 [US1] Implement `vault/writer.py` `create_moc_if_missing(topic: str, vault_path: str) -> str`: if `0 {topic}.md` does not exist, create it from MoC template; return vault-relative path
+- [x] T024 [US1] Implement `vault/indexer.py` `update_index(index: VaultIndex, note: VaultNote)`: insert/replace single note entry in `index.notes`, update `topics`, `tags`, `total_notes`, `last_updated` — O(1)
 
 ### AI Layer
 
-- [ ] T025 [US1] Implement `ai/classifier.py` `classify(text: str, provider: AIProvider, vault_index: VaultIndex, config: AppConfig) -> ClassificationResult`: build prompt injecting `AGENTS.md` + `skills/classifier.md` + vault topics, call `provider.complete()`, parse JSON response (`type`, `topic`, `folder`, `parent_moc`, `title`, `confidence`)
-- [ ] T026 [US1] Implement `ai/formatter.py` `format_note(text: str, classification: ClassificationResult, provider: AIProvider, config: AppConfig) -> str`: build prompt injecting `AGENTS.md` + `skills/vault-writer.md` + `skills/obsidian-rules.md`, return formatted markdown body
-- [ ] T075 [US1] Implement `ai/enricher.py` `add_wikilinks(text: str, index: VaultIndex, config: AppConfig) -> str`: scan vault index for related notes by topic/tag overlap, inject `[[NNNN Title]]` wikilinks for top `enrichment.max_related_notes` matches — called only in `full` processing mode (FR-011)
-- [ ] T027 [US1] Implement prefix detection in `telegram/handlers/message.py` `detect_prefix(text: str, prefixes: dict) -> tuple[NoteType | None, str]`: case-insensitive match against all configured prefixes, return `(NoteType, stripped_text)` or `(None, text)`
-- [ ] T028 [US1] Implement `vault_writer/tools/create_note.py` `handle_create_note(text, type_, folder, config, index, stats) -> dict`: orchestrate full flow — detect type → classify (if needed) → format (if balanced/full) → write → update index → update MoC → return output dict per `contracts/mcp-tools.md`
+- [x] T025 [US1] Implement `ai/classifier.py` `classify(text: str, provider: AIProvider, vault_index: VaultIndex, config: AppConfig) -> ClassificationResult`: build prompt injecting `AGENTS.md` + `skills/classifier.md` + vault topics, call `provider.complete()`, parse JSON response (`type`, `topic`, `folder`, `parent_moc`, `title`, `confidence`)
+- [x] T026 [US1] Implement `ai/formatter.py` `format_note(text: str, classification: ClassificationResult, provider: AIProvider, config: AppConfig) -> str`: build prompt injecting `AGENTS.md` + `skills/vault-writer.md` + `skills/obsidian-rules.md`, return formatted markdown body
+- [x] T075 [US1] Implement `ai/enricher.py` `add_wikilinks(text: str, index: VaultIndex, config: AppConfig) -> str`: scan vault index for related notes by topic/tag overlap, inject `[[NNNN Title]]` wikilinks for top `enrichment.max_related_notes` matches — called only in `full` processing mode (FR-011)
+- [x] T027 [US1] Implement prefix detection in `telegram/handlers/message.py` `detect_prefix(text: str, prefixes: dict) -> tuple[NoteType | None, str]`: case-insensitive match against all configured prefixes, return `(NoteType, stripped_text)` or `(None, text)`
+- [x] T028 [US1] Implement `vault_writer/tools/create_note.py` `handle_create_note(text, type_, folder, config, index, stats) -> dict`: orchestrate full flow — detect type → classify (if needed) → format (if balanced/full) → write → update index → update MoC → return output dict per `contracts/mcp-tools.md`
 
 ### Git Sync
 
-- [ ] T029 [US1] Implement `git_sync/sync.py` `commit_note(vault_path: str, file_path: str, config: GitConfig)`: stage file, commit with `vault: auto-save {date} {time}` message using `gitpython`
-- [ ] T030 [US1] Implement `git_sync/sync.py` `push_if_due(vault_path: str, config: GitConfig, last_push: datetime) -> datetime`: push to remote if `push_interval_minutes` elapsed, return updated `last_push`, silently continue if remote unreachable
+- [x] T029 [US1] Implement `git_sync/sync.py` `commit_note(vault_path: str, file_path: str, config: GitConfig)`: stage file, commit with `vault: auto-save {date} {time}` message using `gitpython`
+- [x] T030 [US1] Implement `git_sync/sync.py` `push_if_due(vault_path: str, config: GitConfig, last_push: datetime) -> datetime`: push to remote if `push_interval_minutes` elapsed, return updated `last_push`, silently continue if remote unreachable
 
 ### Telegram Bot
 
-- [ ] T031 [US1] Implement `telegram/bot.py` `build_application(config: AppConfig) -> Application`: create PTB `Application`, register all handlers, configure job queue
-- [ ] T032 [US1] Implement `telegram/handlers/commands.py` `auth_check(update, config) -> bool`: return `False` and log warning if `update.effective_user.id` not in `allowed_user_ids`
-- [ ] T033 [US1] Implement `telegram/handlers/message.py` `handle_message(update, context)`: auth check → send typing indicator (`send_chat_action("typing")`) → detect prefix or route to AI classify → call `handle_create_note` → reply with confirmation
-- [ ] T034 [US1] Implement `telegram/handlers/commands.py` slash command handlers: `/note`, `/task`, `/idea`, `/journal` — each does auth check + typing indicator + `handle_create_note` with explicit type
-- [ ] T035 [US1] Implement `telegram/handlers/commands.py` `/help` handler: reply with formatted command list
-- [ ] T036 [US1] Implement `telegram/formatter.py` `format_confirmation(file_path: str) -> str`: return `✓ Збережено → {file_path}`
-- [ ] T037 [US1] Implement Telegram rate-limit retry in `telegram/handlers/message.py`: catch `telegram.error.RetryAfter`, `asyncio.sleep(2**attempt)` up to 3 attempts, notify user if all fail
-- [ ] T068 [US1] Implement `config/loader.py` `update_processing_mode(config_path: str, mode: ProcessingMode)`: safe YAML rewrite preserving all other fields — **must exist before T062**
-- [ ] T062 [US1] Add `/mode` config hot-write in `telegram/handlers/commands.py`: call `update_processing_mode()`, reply with `✓ Режим змінено на: {mode}` + restart warning per contracts/telegram-commands.md (FR-013)
-- [ ] T069 [US1] Implement `telegram/handlers/commands.py` `/status` handler: build and send `SessionStats` response per `contracts/telegram-commands.md` format (provider, model, session tokens, last note, notes today, vault total)
+- [x] T031 [US1] Implement `telegram/bot.py` `build_application(config: AppConfig) -> Application`: create PTB `Application`, register all handlers, configure job queue
+- [x] T032 [US1] Implement `telegram/handlers/commands.py` `auth_check(update, config) -> bool`: return `False` and log warning if `update.effective_user.id` not in `allowed_user_ids`
+- [x] T033 [US1] Implement `telegram/handlers/message.py` `handle_message(update, context)`: auth check → send typing indicator (`send_chat_action("typing")`) → detect prefix or route to AI classify → call `handle_create_note` → reply with confirmation
+- [x] T034 [US1] Implement `telegram/handlers/commands.py` slash command handlers: `/note`, `/task`, `/idea`, `/journal` — each does auth check + typing indicator + `handle_create_note` with explicit type
+- [x] T035 [US1] Implement `telegram/handlers/commands.py` `/help` handler: reply with formatted command list
+- [x] T036 [US1] Implement `telegram/formatter.py` `format_confirmation(file_path: str) -> str`: return `✓ Збережено → {file_path}`
+- [x] T037 [US1] Implement Telegram rate-limit retry in `telegram/handlers/message.py`: catch `telegram.error.RetryAfter`, `asyncio.sleep(2**attempt)` up to 3 attempts, notify user if all fail
+- [x] T068 [US1] Implement `config/loader.py` `update_processing_mode(config_path: str, mode: ProcessingMode)`: safe YAML rewrite preserving all other fields — **must exist before T062**
+- [x] T062 [US1] Add `/mode` config hot-write in `telegram/handlers/commands.py`: call `update_processing_mode()`, reply with `✓ Режим змінено на: {mode}` + restart warning per contracts/telegram-commands.md (FR-013)
+- [x] T069 [US1] Implement `telegram/handlers/commands.py` `/status` handler: build and send `SessionStats` response per `contracts/telegram-commands.md` format (provider, model, session tokens, last note, notes today, vault total)
 
 ### MCP Server
 
-- [ ] T038 [US1] Implement `vault_writer/server.py` MCP server entry point: register `create_note` and `get_vault_index` tools using `mcp` SDK `@app.list_tools()` / `@app.call_tool()`, stdio transport
-- [ ] T039 [US1] Implement `vault_writer/tools/get_vault_index.py` `handle_get_vault_index(index: VaultIndex) -> dict`: return snapshot per `contracts/mcp-tools.md`
+- [x] T038 [US1] Implement `vault_writer/server.py` MCP server entry point: register `create_note` and `get_vault_index` tools using `mcp` SDK `@app.list_tools()` / `@app.call_tool()`, stdio transport
+- [x] T039 [US1] Implement `vault_writer/tools/get_vault_index.py` `handle_get_vault_index(index: VaultIndex) -> dict`: return snapshot per `contracts/mcp-tools.md`
 
 ### Setup & Launch
 
-- [ ] T040 [US1] Create `.brain/AGENTS.md` template with Obsidian vault writing instructions (English): note structure rules, frontmatter format, MoC linking rules, wikilink conventions
-- [ ] T041 [US1] [P] Create `.brain/skills/vault-writer.md`: VaultWriter-specific instructions (folder naming, sequential numbering, MoC update rules)
-- [ ] T042 [US1] [P] Create `.brain/skills/classifier.md`: classification guidelines (topic detection, confidence scoring, folder mapping)
-- [ ] T043 [US1] [P] Create `.brain/skills/obsidian-rules.md`: Obsidian-specific rules (frontmatter fields, tags plural form, wikilink syntax)
-- [ ] T044 [US1] Implement `setup.py`: interactive prompts → generate `config.yaml`, copy `.brain/` templates, build vault index, test Telegram + AI connections, generate `start.bat` / `start.sh`, start bot
-- [ ] T045 [US1] Create `start.bat`: activate `.venv`, run `python main.py`
-- [ ] T046 [US1] [P] Create `start.sh`: activate `.venv`, run `python main.py`
-- [ ] T047 [US1] Implement `main.py`: load config → build vault index → init SessionStats → start Telegram bot (blocking `application.run_polling()`). **NOTE: MCP server is a separate standalone process** — `vault_writer/server.py` is launched independently (e.g., by Claude Code via mcp_servers.json). Do NOT start MCP server as a thread here — MCP stdio transport owns stdin/stdout and is incompatible with PTB's event loop in the same process.
+- [x] T040 [US1] Create `.brain/AGENTS.md` template with Obsidian vault writing instructions (English): note structure rules, frontmatter format, MoC linking rules, wikilink conventions
+- [x] T041 [US1] [P] Create `.brain/skills/vault-writer.md`: VaultWriter-specific instructions (folder naming, sequential numbering, MoC update rules)
+- [x] T042 [US1] [P] Create `.brain/skills/classifier.md`: classification guidelines (topic detection, confidence scoring, folder mapping)
+- [x] T043 [US1] [P] Create `.brain/skills/obsidian-rules.md`: Obsidian-specific rules (frontmatter fields, tags plural form, wikilink syntax)
+- [x] T044 [US1] Implement `setup.py`: interactive prompts → generate `config.yaml`, copy `.brain/` templates, build vault index, test Telegram + AI connections, generate `start.bat` / `start.sh`, start bot
+- [x] T045 [US1] Create `start.bat`: activate `.venv`, run `python main.py`
+- [x] T046 [US1] [P] Create `start.sh`: activate `.venv`, run `python main.py`
+- [x] T047 [US1] Implement `main.py`: load config → build vault index → init SessionStats → start Telegram bot (blocking `application.run_polling()`). **NOTE: MCP server is a separate standalone process** — `vault_writer/server.py` is launched independently (e.g., by Claude Code via mcp_servers.json). Do NOT start MCP server as a thread here — MCP stdio transport owns stdin/stdout and is incompatible with PTB's event loop in the same process.
 
 **Checkpoint**: User Story 1 fully functional — bot captures notes end-to-end. Run quickstart.md validation checklist.
 
@@ -120,11 +120,11 @@ description: "Task list for BrainSync MVP implementation"
 
 **Independent Test**: Send `/search Redis` → verify bot replies with matching note paths and excerpts.
 
-- [ ] T048 [P] [US2] Implement `vault_writer/tools/search_notes.py` `handle_search_notes(query: str, limit: int, folder: str | None, index: VaultIndex, vault_path: str) -> dict`: case-insensitive substring search across `title` + `content` of each note in index, compute simple TF score, return sorted results per `contracts/mcp-tools.md`, zero AI calls
-- [ ] T049 [US2] Implement `vault/reader.py` `read_note_content(file_path: str, vault_path: str) -> str`: read `.md` file, return body after frontmatter block (used for excerpt extraction)
-- [ ] T050 [US2] Implement `telegram/handlers/commands.py` `/search` handler: auth check → call `handle_search_notes` → format results with `telegram/formatter.py` → reply
-- [ ] T051 [US2] Implement `telegram/formatter.py` `format_search_results(results: list, query: str) -> str`: `🔍 Знайдено N нотаток для "{query}":\n\n1. {path}\n   ...{excerpt}...`; empty case: `Нічого не знайдено для "{query}"`
-- [ ] T052 [US2] Register `search_notes` tool in `vault_writer/server.py` MCP tool list
+- [x] T048 [P] [US2] Implement `vault_writer/tools/search_notes.py` `handle_search_notes(query: str, limit: int, folder: str | None, index: VaultIndex, vault_path: str) -> dict`: case-insensitive substring search across `title` + `content` of each note in index, compute simple TF score, return sorted results per `contracts/mcp-tools.md`, zero AI calls
+- [x] T049 [US2] Implement `vault/reader.py` `read_note_content(file_path: str, vault_path: str) -> str`: read `.md` file, return body after frontmatter block (used for excerpt extraction)
+- [x] T050 [US2] Implement `telegram/handlers/commands.py` `/search` handler: auth check → call `handle_search_notes` → format results with `telegram/formatter.py` → reply
+- [x] T051 [US2] Implement `telegram/formatter.py` `format_search_results(results: list, query: str) -> str`: `🔍 Знайдено N нотаток для "{query}":\n\n1. {path}\n   ...{excerpt}...`; empty case: `Нічого не знайдено для "{query}"`
+- [x] T052 [US2] Register `search_notes` tool in `vault_writer/server.py` MCP tool list
 
 **Checkpoint**: User Stories 1 AND 2 independently functional.
 
@@ -136,11 +136,11 @@ description: "Task list for BrainSync MVP implementation"
 
 **Independent Test**: Set `daily_summary.time` to 2 minutes from now, restart bot → verify summary message arrives with today's notes and pending tasks.
 
-- [ ] T053 [US3] Implement `telegram/handlers/schedule.py` `get_pending_tasks(vault_path: str, index: VaultIndex) -> list[str]`: scan all `task`-type note files, regex `r'^- \[ \] (.+)$'` (multiline), return list of pending task texts — zero AI calls
-- [ ] T054 [US3] Implement `telegram/handlers/schedule.py` `daily_summary_job(context)`: get today's notes from `SessionStats` + index, get pending tasks, format message, send to `allowed_user_ids[0]`
-- [ ] T055 [US3] Implement `telegram/handlers/schedule.py` `weekly_summary_job(context)`: count notes added this week (by `date` frontmatter field), group by topic, format message, send
-- [ ] T056 [US3] Implement `telegram/handlers/schedule.py` `monthly_summary_job(context)`: count notes added this month by filtering `index.notes` where `date` frontmatter field is within current calendar month, list new topics introduced this month, compute vault growth as `(this month count)` — no log parsing needed, format, send
-- [ ] T057 [US3] Register scheduled jobs in `telegram/bot.py` `build_application()`: `job_queue.run_daily(daily_summary_job, time=config.schedule.daily_summary_time)` etc., only if enabled in config
+- [x] T053 [US3] Implement `telegram/handlers/schedule.py` `get_pending_tasks(vault_path: str, index: VaultIndex) -> list[str]`: scan all `task`-type note files, regex `r'^- \[ \] (.+)$'` (multiline), return list of pending task texts — zero AI calls
+- [x] T054 [US3] Implement `telegram/handlers/schedule.py` `daily_summary_job(context)`: get today's notes from `SessionStats` + index, get pending tasks, format message, send to `allowed_user_ids[0]`
+- [x] T055 [US3] Implement `telegram/handlers/schedule.py` `weekly_summary_job(context)`: count notes added this week (by `date` frontmatter field), group by topic, format message, send
+- [x] T056 [US3] Implement `telegram/handlers/schedule.py` `monthly_summary_job(context)`: count notes added this month by filtering `index.notes` where `date` frontmatter field is within current calendar month, list new topics introduced this month, compute vault growth as `(this month count)` — no log parsing needed, format, send
+- [x] T057 [US3] Register scheduled jobs in `telegram/bot.py` `build_application()`: `job_queue.run_daily(daily_summary_job, time=config.schedule.daily_summary_time)` etc., only if enabled in config
 
 **Checkpoint**: All three scheduled summary types fire at configured times.
 
@@ -154,10 +154,10 @@ description: "Task list for BrainSync MVP implementation"
 
 **Independent Test**: Delete `config.yaml`, run `python setup.py`, answer all prompts → verify config created, bot starts, Telegram test message received.
 
-- [ ] T058 [US4] Add vault path existence validation in `setup.py`: prompt again if path not found, show clear error before exiting
-- [ ] T059 [US4] Add Telegram connection test in `setup.py`: send test message `"BrainSync setup complete ✓"` to configured user ID, confirm delivery
-- [ ] T060 [US4] Add AI provider connection test in `setup.py`: call `provider.complete("ping")` with short max_tokens, confirm response
-- [ ] T061 [US4] Add git remote test in `setup.py` (if git enabled): `git ls-remote {remote_url}`, warn if unreachable but do not abort
+- [x] T058 [US4] Add vault path existence validation in `setup.py`: prompt again if path not found, show clear error before exiting
+- [x] T059 [US4] Add Telegram connection test in `setup.py`: send test message `"BrainSync setup complete ✓"` to configured user ID, confirm delivery
+- [x] T060 [US4] Add AI provider connection test in `setup.py`: call `provider.complete("ping")` with short max_tokens, confirm response
+- [x] T061 [US4] Add git remote test in `setup.py` (if git enabled): `git ls-remote {remote_url}`, warn if unreachable but do not abort
 
 **Checkpoint**: User Story 4 fully functional — new user can complete setup in <5 minutes (SC-007).
 

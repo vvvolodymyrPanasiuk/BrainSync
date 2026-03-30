@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell.exe -File \".specify/scripts/powershell/check-prerequisites.ps1\" -Json -PathsOnly 2>&1)",
+      "Bash(powershell -Command \"\n\\\\$tids = @\\('T017','T018','T019','T020','T021','T022','T023','T024',\n           'T025','T026','T075','T027','T028','T029','T030',\n           'T031','T032','T033','T034','T035','T036','T037',\n           'T068','T062','T069','T038','T039',\n           'T040','T041','T042','T043','T044','T045','T046','T047',\n           'T048','T049','T050','T051','T052',\n           'T053','T054','T055','T056','T057',\n           'T058','T059','T060','T061'\\)\n\\\\$path = 'specs/001-brainsync-mvp/tasks.md'\n\\\\$content = Get-Content \\\\$path -Raw -Encoding UTF8\nforeach \\(\\\\$t in \\\\$tids\\) {\n    \\\\$content = \\\\$content -replace \\('- \\\\[ \\\\] ' + \\\\$t + ' '\\), \\('- [x] ' + \\\\$t + ' '\\)\n}\nSet-Content \\\\$path -Value \\\\$content -Encoding UTF8 -NoNewline\nWrite-Host 'done'\n\" 2>&1)",
+      "Bash(git add:*)"
+    ]
+  }
+}
