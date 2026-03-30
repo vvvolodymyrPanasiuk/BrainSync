@@ -34,7 +34,7 @@ description: "Task list for BrainSync MVP implementation"
 
 ⚠️ **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T005 Implement `AppConfig` dataclass hierarchy in `config/loader.py`: `AIConfig`, `VaultConfig`, `TelegramConfig`, `GitConfig`, `ScheduleConfig`, `AppConfig` — parse `config.yaml` via `pyyaml`
+- [x] T005 Implement `AppConfig` dataclass hierarchy in `config/loader.py`: `AIConfig`, `VaultConfig`, `TelegramConfig`, `GitConfig`, `ScheduleConfig`, `AppConfig` — parse `config.yaml` via `pyyaml`
 - [ ] T006 Add config validation in `config/loader.py`: vault path exists, `allowed_user_ids` not empty warning, `api_key` not empty when provider=anthropic, `processing_mode` enum check, `schedule.*.time` HH:MM format, `monthly_review.day` 1–28
 - [ ] T007 [P] Implement `NoteType` enum in `vault_writer/vault/writer.py`: `NOTE`, `TASK`, `IDEA`, `JOURNAL`
 - [ ] T008 [P] Implement `ProcessingMode` enum in `vault_writer/ai/provider.py`: `MINIMAL`, `BALANCED`, `FULL`
