@@ -21,10 +21,10 @@ description: "Task list for BrainSync MVP implementation"
 
 **Purpose**: Project initialization and shared infrastructure scaffolding.
 
-- [ ] T001 Create project directory structure per plan.md: `vault_writer/`, `telegram/`, `git_sync/`, `config/`, `tests/`, `.brain/`
-- [ ] T002 [P] Create `requirements.txt` with: `python-telegram-bot>=20.0`, `anthropic`, `mcp`, `pyyaml`, `gitpython`, `pytest`
-- [ ] T003 [P] Create `.gitignore` including: `config.yaml`, `.venv/`, `logs/`, `__pycache__/`, `*.pyc`
-- [ ] T004 [P] Create empty `__init__.py` files in all packages: `vault_writer/`, `vault_writer/tools/`, `vault_writer/ai/`, `vault_writer/vault/`, `telegram/`, `telegram/handlers/`, `git_sync/`, `config/`
+- [x] T001 Create project directory structure per plan.md: `vault_writer/`, `telegram/`, `git_sync/`, `config/`, `tests/`, `.brain/`
+- [x] T002 [P] Create `requirements.txt` with: `python-telegram-bot>=20.0`, `anthropic`, `mcp`, `pyyaml`, `gitpython`, `pytest`
+- [x] T003 [P] Create `.gitignore` including: `config.yaml`, `.venv/`, `logs/`, `__pycache__/`, `*.pyc`
+- [x] T004 [P] Create empty `__init__.py` files in all packages: `vault_writer/`, `vault_writer/tools/`, `vault_writer/ai/`, `vault_writer/vault/`, `telegram/`, `telegram/handlers/`, `git_sync/`, `config/`
 
 ---
 
