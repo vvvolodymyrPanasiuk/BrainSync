@@ -38,8 +38,15 @@ def handle_create_note(
     index: VaultIndex,
     stats,          # SessionStats
     provider=None,  # AIProvider | None
+    claude_code_session_tokens: int = 0,
 ) -> dict:
     """Orchestrate full note creation: classify → format → enrich → write → MoC → stats."""
+    # Claude Code session token limit check (T067)
+    if hasattr(config, 'claude_code_max_session_tokens'):
+        limit = getattr(config, 'claude_code_max_session_tokens', 0)
+        if limit and claude_code_session_tokens >= limit:
+            return {"success": False, "error": f"Claude Code session token limit reached ({limit})"}
+
     mode = ProcessingMode(config.ai.processing_mode)
     today = _date.today().isoformat()
 

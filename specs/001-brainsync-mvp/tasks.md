@@ -169,11 +169,11 @@ description: "Task list for BrainSync MVP implementation"
 
 **Independent Test**: Add VaultWriter to `.claude/mcp_servers.json` in a test project, open Claude Code, call `create_note` with sample text → verify note appears in vault.
 
-- [ ] T063 [US5] Verify `vault_writer/server.py` runs as standalone stdio MCP process: `python vault_writer/server.py` should start without error and respond to MCP `initialize` handshake
-- [ ] T064 [US5] Implement `vault_writer/tools/classify_content.py` `handle_classify_content(text: str, provider, index, config) -> dict`: call `ai/classifier.py`, return result per `contracts/mcp-tools.md`
-- [ ] T065 [US5] Register `classify_content` and `update_moc` tools in `vault_writer/server.py` MCP tool list
-- [ ] T066 [US5] Update `quickstart.md` with Claude Code registration section: `.claude/mcp_servers.json` snippet, test procedure
-- [ ] T067 [US5] Add Claude Code session token limit check in `vault_writer/tools/create_note.py`: if `claude_code.max_session_tokens` exceeded, return error response, skip write
+- [x] T063 [US5] Verify `vault_writer/server.py` runs as standalone stdio MCP process: `python vault_writer/server.py` should start without error and respond to MCP `initialize` handshake
+- [x] T064 [US5] Implement `vault_writer/tools/classify_content.py` `handle_classify_content(text: str, provider, index, config) -> dict`: call `ai/classifier.py`, return result per `contracts/mcp-tools.md`
+- [x] T065 [US5] Register `classify_content` and `update_moc` tools in `vault_writer/server.py` MCP tool list
+- [x] T066 [US5] Update `quickstart.md` with Claude Code registration section: `.claude/mcp_servers.json` snippet, test procedure
+- [x] T067 [US5] Add Claude Code session token limit check in `vault_writer/tools/create_note.py`: if `claude_code.max_session_tokens` exceeded, return error response, skip write
 
 **Checkpoint**: All 5 MCP tools registered and callable from Claude Code session.
 
@@ -183,11 +183,11 @@ description: "Task list for BrainSync MVP implementation"
 
 **Purpose**: Hardening, observability, and cross-story improvements.
 
-- [ ] T070 [P] Implement AI API fallback in `vault_writer/tools/create_note.py`: on any `anthropic.APIError`, catch exception, set mode to `MINIMAL`, save note as-is, append fallback warning to Telegram reply
-- [ ] T071 [P] Add structured logging throughout: `vault/writer.py` logs file path on every write; `ai/classifier.py` logs `type`, `folder`, `confidence` when `log_ai_decisions: true` (never log note content or API keys); Telegram handlers log unauthorised access attempts
-- [ ] T072 [P] Implement `git_sync/sync.py` push failure silent handling: wrap `origin.push()` in try/except, log warning, update `last_push` timestamp only on success
-- [ ] T073 Run `quickstart.md` validation checklist end-to-end: all 6 checklist items green
-- [ ] T074 [P] Verify `.gitignore` covers `config.yaml`, `.venv/`, `logs/`, `__pycache__/`
+- [x] T070 [P] Implement AI API fallback in `vault_writer/tools/create_note.py`: on any `anthropic.APIError`, catch exception, set mode to `MINIMAL`, save note as-is, append fallback warning to Telegram reply
+- [x] T071 [P] Add structured logging throughout: `vault/writer.py` logs file path on every write; `ai/classifier.py` logs `type`, `folder`, `confidence` when `log_ai_decisions: true` (never log note content or API keys); Telegram handlers log unauthorised access attempts
+- [x] T072 [P] Implement `git_sync/sync.py` push failure silent handling: wrap `origin.push()` in try/except, log warning, update `last_push` timestamp only on success
+- [x] T073 Run `quickstart.md` validation checklist end-to-end: all 6 checklist items green
+- [x] T074 [P] Verify `.gitignore` covers `config.yaml`, `.venv/`, `logs/`, `__pycache__/`
 
 ---
 

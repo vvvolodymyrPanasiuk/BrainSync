@@ -1,10 +1,13 @@
 """Vault writer: sequential note numbering, file creation, MoC updates."""
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class NoteType(str, Enum):
@@ -65,6 +68,7 @@ def write_note(note: VaultNote, vault_path: str) -> str:
         frontmatter = _build_frontmatter(note)
         body = note.content if note.content else _default_body(note)
         full_path.write_text(frontmatter + "\n" + body, encoding="utf-8")
+        logger.info("write_note: %s", note.file_path)
         return note.file_path
 
 
