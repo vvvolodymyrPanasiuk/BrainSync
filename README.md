@@ -40,33 +40,52 @@ No manual filing. No inbox to process later. Notes are organized at the moment o
 
 ### Prerequisites
 
-- Python 3.12+
-- Git installed and configured
+- [Python 3.12+](https://python.org/downloads) — check "Add Python to PATH" during installation
+- [Git](https://git-scm.com)
 - An existing [Obsidian](https://obsidian.md) vault (e.g. `C:\SecondaryBrain`)
 - A Telegram bot token — create one via [@BotFather](https://t.me/BotFather)
 - Your Telegram user ID — get it from [@userinfobot](https://t.me/userinfobot)
 - An [Anthropic API key](https://console.anthropic.com)
 
-### Installation
+---
+
+### Option A — One-click install (recommended)
 
 ```bash
-# 1. Clone the repository
+git clone https://github.com/vvvolodymyrPanasiuk/BrainSync.git
+cd BrainSync
+```
+
+Then double-click **`install.bat`** (Windows) or run **`bash install.sh`** (macOS / Linux).
+
+The script will:
+1. Check that Python is available
+2. Install [`uv`](https://github.com/astral-sh/uv) — a fast Python package manager (if not already installed)
+3. Install all dependencies into an isolated environment
+4. Launch the interactive setup wizard — enter your vault path, bot token, user ID, and API key
+
+That's it. From now on, just run **`start.bat`** to launch the bot.
+
+---
+
+### Option B — Manual install
+
+If you prefer to do it step by step:
+
+```bash
+# 1. Clone
 git clone https://github.com/vvvolodymyrPanasiuk/BrainSync.git
 cd BrainSync
 
-# 2. Create and activate a virtual environment
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-# source .venv/bin/activate   # macOS / Linux
+# 2. Install uv (fast package manager — replaces pip + venv)
+pip install uv
 
-# 3. Install dependencies
-pip install -r requirements.txt
+# 3. Install dependencies (uv creates the virtual environment automatically)
+uv sync
 
-# 4. Run the interactive installer
-python setup.py
+# 4. Run the interactive setup wizard
+uv run python setup.py
 ```
-
-The installer will ask for your vault path, bot token, user ID, API key, processing mode, and git settings — then generate `config.yaml` and verify all connections.
 
 ### Running the bot
 
@@ -77,11 +96,13 @@ start.bat
 # macOS / Linux
 bash start.sh
 
-# Or directly
-python main.py
+# Or directly (if you used manual install)
+uv run python main.py
 ```
 
 The bot runs in the foreground. Press `Ctrl+C` to stop.
+
+> **What is `uv`?** It's a modern Python package manager that replaces `pip` + `venv`. Running `uv sync` automatically creates an isolated environment for this project and installs all dependencies — no manual activation needed. `uv run` executes any command inside that environment.
 
 ---
 
