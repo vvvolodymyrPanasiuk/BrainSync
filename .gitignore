@@ -1,6 +1,7 @@
 config.yaml
 .venv/
 venv/
+.claude/settings.local.json
 logs/
 __pycache__/
 *.pyc

@@ -54,16 +54,26 @@ def create_folder_if_missing(folder: Path) -> None:
     folder.mkdir(parents=True, exist_ok=True)
 
 
+def _assert_within_vault(path: Path, vault: Path, label: str) -> None:
+    """Raise ValueError if *path* resolves outside *vault* (prevents path traversal)."""
+    try:
+        path.resolve().relative_to(vault.resolve())
+    except ValueError:
+        raise ValueError(f"Path traversal blocked: {label!r} escapes vault boundary")
+
+
 def write_note(note: VaultNote, vault_path: str) -> str:
     """Write note to vault. Returns vault-relative file path. Thread-safe."""
     with _write_lock:
         vault = Path(vault_path)
         folder = vault / note.folder
+        _assert_within_vault(folder, vault, note.folder)
         create_folder_if_missing(folder)
         note.note_number = next_note_number(folder)
         filename = f"{note.note_number:04d} {note.title}.md"
         note.file_path = f"{note.folder}/{filename}"
         full_path = folder / filename
+        _assert_within_vault(full_path, vault, note.file_path)
 
         frontmatter = _build_frontmatter(note)
         body = note.content if note.content else _default_body(note)
@@ -90,7 +100,9 @@ def _default_body(note: VaultNote) -> str:
 
 def update_moc(moc_path: str, note_path: str, note_title: str, note_number: int, vault_path: str) -> None:
     """Append wikilink to parent MoC under '## 🔑 Main sections'."""
-    full_moc = Path(vault_path) / moc_path
+    vault = Path(vault_path)
+    full_moc = vault / moc_path
+    _assert_within_vault(full_moc, vault, moc_path)
     if not full_moc.exists():
         return
     text = full_moc.read_text(encoding="utf-8")
@@ -113,6 +125,7 @@ def create_moc_if_missing(topic: str, vault_path: str) -> str:
     from datetime import date as _date
     vault = Path(vault_path)
     folder = vault / topic
+    _assert_within_vault(folder, vault, topic)
     create_folder_if_missing(folder)
     moc_file = folder / f"0 {topic}.md"
     vault_rel = f"{topic}/0 {topic}.md"
