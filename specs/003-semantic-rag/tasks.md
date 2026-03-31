@@ -21,9 +21,9 @@ description: "Task list for BrainSync Semantic Search & RAG implementation"
 
 **Purpose**: New dependencies, package scaffolding, config extension.
 
-- [ ] T001 Add `chromadb` and `sentence-transformers` to `requirements.txt` (append after existing deps)
-- [ ] T002 [P] Create empty `vault_writer/rag/__init__.py` to register the new rag sub-package
-- [ ] T003 [P] Add `data/chroma/` to `.gitignore` (vector index contains personal vault embeddings)
+- [x] T001 Add `chromadb` and `sentence-transformers` to `requirements.txt` (append after existing deps)
+- [x] T002 [P] Create empty `vault_writer/rag/__init__.py` to register the new rag sub-package
+- [x] T003 [P] Add `data/chroma/` to `.gitignore` (vector index contains personal vault embeddings)
 
 ---
 
@@ -33,19 +33,19 @@ description: "Task list for BrainSync Semantic Search & RAG implementation"
 
 ⚠️ **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T004 Add `EmbeddingConfig` dataclass to `config/loader.py`: fields `backend` (str, default `"sentence-transformers"`), `model` (str, default `"paraphrase-multilingual-MiniLM-L12-v2"`), `ollama_embed_url` (str, default `"http://localhost:11434"`), `index_path` (str, default `"data/chroma"`), `similarity_duplicate_threshold` (float, default `0.85`), `similarity_related_threshold` (float, default `0.70`), `top_k_results` (int, default `5`); add `embedding: EmbeddingConfig` field to `AppConfig`; parse from `config.yaml` `embedding:` block
+- [x] T004 Add `EmbeddingConfig` dataclass to `config/loader.py`: fields `backend` (str, default `"sentence-transformers"`), `model` (str, default `"paraphrase-multilingual-MiniLM-L12-v2"`), `ollama_embed_url` (str, default `"http://localhost:11434"`), `index_path` (str, default `"data/chroma"`), `similarity_duplicate_threshold` (float, default `0.85`), `similarity_related_threshold` (float, default `0.70`), `top_k_results` (int, default `5`); add `embedding: EmbeddingConfig` field to `AppConfig`; parse from `config.yaml` `embedding:` block
 
-- [ ] T005 Add `get_embedding_provider(config: AppConfig) -> EmbeddingProvider` factory to `config/loader.py`: returns `SentenceTransformersEmbedder` if `backend == "sentence-transformers"`, else `OllamaEmbedder`
+- [x] T005 Add `get_embedding_provider(config: AppConfig) -> EmbeddingProvider` factory to `config/loader.py`: returns `SentenceTransformersEmbedder` if `backend == "sentence-transformers"`, else `OllamaEmbedder`
 
-- [ ] T006 [P] Create `vault_writer/rag/embedder.py`: define `EmbeddingProvider` ABC with `embed(texts: list[str]) -> list[list[float]]`; implement `SentenceTransformersEmbedder.__init__(model_name)` with lazy `SentenceTransformer` load; implement `embed()` using `model.encode(texts).tolist()`; implement `OllamaEmbedder.__init__(base_url, model)` and `embed()` via POST to `{base_url}/api/embeddings` for each text, return list of embeddings; raise `RuntimeError` on HTTP error
+- [x] T006 [P] Create `vault_writer/rag/embedder.py`: define `EmbeddingProvider` ABC with `embed(texts: list[str]) -> list[list[float]]`; implement `SentenceTransformersEmbedder.__init__(model_name)` with lazy `SentenceTransformer` load; implement `embed()` using `model.encode(texts).tolist()`; implement `OllamaEmbedder.__init__(base_url, model)` and `embed()` via POST to `{base_url}/api/embeddings` for each text, return list of embeddings; raise `RuntimeError` on HTTP error
 
-- [ ] T007 [P] Create `vault_writer/rag/vector_store.py`: `VectorStore.__init__(index_path, embedder)` — create `chromadb.PersistentClient(index_path)`, get/create collection `"vault_notes"` with cosine space; implement `upsert_note(file_path, content)` — compute SHA-256 hash of content, check if already indexed with same hash (skip if unchanged), embed content, call `collection.upsert(ids, embeddings, documents, metadatas)`; implement `search(query, top_k) -> list[SearchResult]` — embed query, call `collection.query`, return ranked `SearchResult` list; implement `find_similar(content, exclude_path, top_k) -> list[SimilarityNotice]` — embed content, query collection, filter out `exclude_path`, classify each result as duplicate/related/unique based on `EmbeddingConfig` thresholds; implement `delete_note(file_path)`; implement `count() -> int`; implement `build_from_vault(vault_path, config) -> int` — scan all `.md` files excluding MoC files (`0 *.md`), upsert each, return count
+- [x] T007 [P] Create `vault_writer/rag/vector_store.py`: `VectorStore.__init__(index_path, embedder)` — create `chromadb.PersistentClient(index_path)`, get/create collection `"vault_notes"` with cosine space; implement `upsert_note(file_path, content)` — compute SHA-256 hash of content, check if already indexed with same hash (skip if unchanged), embed content, call `collection.upsert(ids, embeddings, documents, metadatas)`; implement `search(query, top_k) -> list[SearchResult]` — embed query, call `collection.query`, return ranked `SearchResult` list; implement `find_similar(content, exclude_path, top_k) -> list[SimilarityNotice]` — embed content, query collection, filter out `exclude_path`, classify each result as duplicate/related/unique based on `EmbeddingConfig` thresholds; implement `delete_note(file_path)`; implement `count() -> int`; implement `build_from_vault(vault_path, config) -> int` — scan all `.md` files excluding MoC files (`0 *.md`), upsert each, return count
 
-- [ ] T008 [P] Create `vault_writer/rag/intent.py`: `classify_intent(message: str, provider: AIProvider) -> IntentType` — build prompt classifying message as `rag_query` / `search_query` / `new_note`; call `provider.complete(prompt, max_tokens=20)`; parse response to `IntentType`; on any error or unrecognised response return `IntentType.NEW_NOTE` (safe default); define `IntentType` enum in same file: `RAG_QUERY = "rag_query"`, `SEARCH_QUERY = "search_query"`, `NEW_NOTE = "new_note"`
+- [x] T008 [P] Create `vault_writer/rag/intent.py`: `classify_intent(message: str, provider: AIProvider) -> IntentType` — build prompt classifying message as `rag_query` / `search_query` / `new_note`; call `provider.complete(prompt, max_tokens=20)`; parse response to `IntentType`; on any error or unrecognised response return `IntentType.NEW_NOTE` (safe default); define `IntentType` enum in same file: `RAG_QUERY = "rag_query"`, `SEARCH_QUERY = "search_query"`, `NEW_NOTE = "new_note"`
 
-- [ ] T009 [P] Create `vault_writer/rag/engine.py`: define `RAGResult` dataclass (`answer`, `sources: list[str]`, `query`, `found: bool`) and `SearchResult` dataclass (`file_path`, `excerpt`, `similarity: float`) and `SimilarityNotice` dataclass (`matched_path`, `similarity`, `is_duplicate: bool`); implement `answer_query(query, store, provider, top_k, config) -> RAGResult` — call `store.search(query, top_k)`, if no results return `RAGResult(found=False, ...)`; build RAG prompt with retrieved context; call `provider.complete(prompt)`; return `RAGResult(answer, sources, query, found=True)`; implement `search_vault(query, store, top_k) -> list[SearchResult]` — delegate to `store.search()`
+- [x] T009 [P] Create `vault_writer/rag/engine.py`: define `RAGResult` dataclass (`answer`, `sources: list[str]`, `query`, `found: bool`) and `SearchResult` dataclass (`file_path`, `excerpt`, `similarity: float`) and `SimilarityNotice` dataclass (`matched_path`, `similarity`, `is_duplicate: bool`); implement `answer_query(query, store, provider, top_k, config) -> RAGResult` — call `store.search(query, top_k)`, if no results return `RAGResult(found=False, ...)`; build RAG prompt with retrieved context; call `provider.complete(prompt)`; return `RAGResult(answer, sources, query, found=True)`; implement `search_vault(query, store, top_k) -> list[SearchResult]` — delegate to `store.search()`
 
-- [ ] T010 Update `main.py`: import `get_embedding_provider` from `config.loader`; after `get_ai_provider()`, call `get_embedding_provider(config)` to create embedder; instantiate `VectorStore(config.embedding.index_path, embedder)`; store in `app.bot_data["vector_store"]`; in `_ensure_infrastructure_ready()`, start background thread calling `store.build_from_vault(config.vault.path, config.embedding)` — non-blocking; log count when complete
+- [x] T010 Update `main.py`: import `get_embedding_provider` from `config.loader`; after `get_ai_provider()`, call `get_embedding_provider(config)` to create embedder; instantiate `VectorStore(config.embedding.index_path, embedder)`; store in `app.bot_data["vector_store"]`; in `_ensure_infrastructure_ready()`, start background thread calling `store.build_from_vault(config.vault.path, config.embedding)` — non-blocking; log count when complete
 
 **Checkpoint**: Config loads with embedding fields, EmbeddingProvider factory works, VectorStore initialises, background indexing starts on bot launch. All user stories can now begin.
 
@@ -57,9 +57,9 @@ description: "Task list for BrainSync Semantic Search & RAG implementation"
 
 **Independent Test**: Send "що я думав про X?" to bot with a vault containing ≥1 relevant note. Verify bot replies with a synthesized answer and at least one citation. No command required.
 
-- [ ] T011 [US1] Add `format_rag_answer(answer: str, sources: list[str]) -> str` and `format_rag_not_found() -> str` to `telegram/formatter.py`
+- [x] T011 [US1] Add `format_rag_answer(answer: str, sources: list[str]) -> str` and `format_rag_not_found() -> str` to `telegram/formatter.py`
 
-- [ ] T012 [US1] Update `telegram/handlers/message.py` `handle_message()`: after auth check and before `detect_prefix()`, if `provider` is not None and `context.bot_data.get("vector_store")` exists, call `classify_intent(text, provider)` in executor; if `IntentType.RAG_QUERY` → call `answer_query(text, store, provider, config.embedding.top_k_results, config)` in executor → reply with `format_rag_answer(result.answer, result.sources)` or `format_rag_not_found()` → return early (do not save as note); if `IntentType.SEARCH_QUERY` → fall through to Phase 4 handler (stub return for now); if `IntentType.NEW_NOTE` → continue existing save flow; if `provider` is None or vector_store absent → skip intent classification entirely (safe fallback to existing behaviour)
+- [x] T012 [US1] Update `telegram/handlers/message.py` `handle_message()`: after auth check and before `detect_prefix()`, if `provider` is not None and `context.bot_data.get("vector_store")` exists, call `classify_intent(text, provider)` in executor; if `IntentType.RAG_QUERY` → call `answer_query(text, store, provider, config.embedding.top_k_results, config)` in executor → reply with `format_rag_answer(result.answer, result.sources)` or `format_rag_not_found()` → return early (do not save as note); if `IntentType.SEARCH_QUERY` → fall through to Phase 4 handler (stub return for now); if `IntentType.NEW_NOTE` → continue existing save flow; if `provider` is None or vector_store absent → skip intent classification entirely (safe fallback to existing behaviour)
 
 **Checkpoint**: User Story 1 fully functional — question about vault → RAG answer with citations.
 
@@ -71,11 +71,11 @@ description: "Task list for BrainSync Semantic Search & RAG implementation"
 
 **Independent Test**: Send `/search управління часом` where the phrase doesn't appear literally in any note but related concepts do. Verify bot returns relevant semantic results.
 
-- [ ] T013 [US2] Add `format_semantic_search_results(results: list[SearchResult], query: str) -> str` and `format_search_degraded_notice() -> str` to `telegram/formatter.py`
+- [x] T013 [US2] Add `format_semantic_search_results(results: list[SearchResult], query: str) -> str` and `format_search_degraded_notice() -> str` to `telegram/formatter.py`
 
-- [ ] T014 [US2] Replace keyword search in `telegram/handlers/commands.py` `cmd_search()`: if `vector_store` in `bot_data`, call `search_vault(query, store, config.embedding.top_k_results)` in executor; format with `format_semantic_search_results()`; if `vector_store` absent or raises → fall back to existing `search_notes()` keyword search; prepend `format_search_degraded_notice()` on fallback
+- [x] T014 [US2] Replace keyword search in `telegram/handlers/commands.py` `cmd_search()`: if `vector_store` in `bot_data`, call `search_vault(query, store, config.embedding.top_k_results)` in executor; format with `format_semantic_search_results()`; if `vector_store` absent or raises → fall back to existing `search_notes()` keyword search; prepend `format_search_degraded_notice()` on fallback
 
-- [ ] T015 [US2] Complete `SEARCH_QUERY` branch in `telegram/handlers/message.py` `handle_message()`: call `search_vault(text, store, config.embedding.top_k_results)` in executor; reply with `format_semantic_search_results()`; return early
+- [x] T015 [US2] Complete `SEARCH_QUERY` branch in `telegram/handlers/message.py` `handle_message()`: call `search_vault(text, store, config.embedding.top_k_results)` in executor; reply with `format_semantic_search_results()`; return early
 
 **Checkpoint**: User Stories 1 AND 2 independently functional.
 
@@ -87,13 +87,13 @@ description: "Task list for BrainSync Semantic Search & RAG implementation"
 
 **Independent Test**: Save a note semantically similar to an existing one. Verify confirmation reply includes "⚠️ Схожа нотатка" or "💡 Можливо пов'язана нотатка" with the matching note's path and similarity percentage.
 
-- [ ] T016 [US3] Add `format_similarity_notice(notices: list[SimilarityNotice]) -> str` to `telegram/formatter.py`: for each notice, if `is_duplicate` → "⚠️ Схожа нотатка вже існує:\n→ {path} ({pct}%)"; else → "💡 Можливо пов'язана нотатка:\n→ {path} ({pct}%)"; return empty string if list is empty
+- [x] T016 [US3] Add `format_similarity_notice(notices: list[SimilarityNotice]) -> str` to `telegram/formatter.py`: for each notice, if `is_duplicate` → "⚠️ Схожа нотатка вже існує:\n→ {path} ({pct}%)"; else → "💡 Можливо пов'язана нотатка:\n→ {path} ({pct}%)"; return empty string if list is empty
 
-- [ ] T017 [US3] Update `vault_writer/tools/create_note.py` `handle_create_note()`: after `write_note()` success, call `store.upsert_note(file_path, content)` if `store` provided (new optional param `vector_store=None`); call `store.find_similar(content, exclude_path=file_path, top_k=3)` filtered to similarity ≥ `config.embedding.similarity_related_threshold`; include `similarity_notices` list in returned dict
+- [x] T017 [US3] Update `vault_writer/tools/create_note.py` `handle_create_note()`: after `write_note()` success, call `store.upsert_note(file_path, content)` if `store` provided (new optional param `vector_store=None`); call `store.find_similar(content, exclude_path=file_path, top_k=3)` filtered to similarity ≥ `config.embedding.similarity_related_threshold`; include `similarity_notices` list in returned dict
 
-- [ ] T018 [US3] Update `telegram/handlers/message.py` `handle_message()` NEW_NOTE branch: after `_run_create_note()`, if `result["success"]` and `result.get("similarity_notices")`, append `format_similarity_notice(notices)` to reply string
+- [x] T018 [US3] Update `telegram/handlers/message.py` `handle_message()` NEW_NOTE branch: after `_run_create_note()`, if `result["success"]` and `result.get("similarity_notices")`, append `format_similarity_notice(notices)` to reply string
 
-- [ ] T019 [US3] Update `telegram/handlers/media.py` all `_run_create_note()` call sites (voice, photo, PDF, text file): pass `vector_store=context.bot_data.get("vector_store")` and `embedding_config=config.embedding`; append `format_similarity_notice()` to reply if notices returned
+- [x] T019 [US3] Update `telegram/handlers/media.py` all `_run_create_note()` call sites (voice, photo, PDF, text file): pass `vector_store=context.bot_data.get("vector_store")` and `embedding_config=config.embedding`; append `format_similarity_notice()` to reply if notices returned
 
 **Checkpoint**: User Stories 1, 2, AND 3 independently functional.
 
@@ -105,13 +105,13 @@ description: "Task list for BrainSync Semantic Search & RAG implementation"
 
 **Independent Test**: Add a note via bot, restart bot, ask a question matching that note. Verify it appears in results without waiting for rebuild. Send `/reindex` and verify completion message with note count.
 
-- [ ] T020 [US4] Add `/reindex` command handler to `telegram/handlers/commands.py`: auth check → reply "⏳ Переіндексація vault…" → call `store.build_from_vault(config.vault.path, config.embedding)` in executor → reply "✅ Переіндексовано: {N} нотаток."
+- [x] T020 [US4] Add `/reindex` command handler to `telegram/handlers/commands.py`: auth check → reply "⏳ Переіндексація vault…" → call `store.build_from_vault(config.vault.path, config.embedding)` in executor → reply "✅ Переіндексовано: {N} нотаток."
 
-- [ ] T021 [US4] Register `/reindex` `CommandHandler` in `telegram/bot.py` `build_application()`: `app.add_handler(CommandHandler("reindex", cmd_reindex))`
+- [x] T021 [US4] Register `/reindex` `CommandHandler` in `telegram/bot.py` `build_application()`: `app.add_handler(CommandHandler("reindex", cmd_reindex))`
 
-- [ ] T022 [US4] Add `format_reindex_done(count: int) -> str` and `format_reindex_start() -> str` to `telegram/formatter.py`
+- [x] T022 [US4] Add `format_reindex_done(count: int) -> str` and `format_reindex_start() -> str` to `telegram/formatter.py`
 
-- [ ] T023 [US4] Verify ChromaDB persistence across restarts in `vault_writer/rag/vector_store.py`: ensure `PersistentClient` is used (not `Client`); add `is_ready() -> bool` method that returns `True` if collection exists and `count() > 0`; log collection size on `VectorStore.__init__()` if existing index found
+- [x] T023 [US4] Verify ChromaDB persistence across restarts in `vault_writer/rag/vector_store.py`: ensure `PersistentClient` is used (not `Client`); add `is_ready() -> bool` method that returns `True` if collection exists and `count() > 0`; log collection size on `VectorStore.__init__()` if existing index found
 
 **Checkpoint**: All 4 user stories functional. Index survives restart. Manual reindex works.
 
@@ -121,15 +121,15 @@ description: "Task list for BrainSync Semantic Search & RAG implementation"
 
 **Purpose**: Hardening, observability, edge cases.
 
-- [ ] T024 [P] Add structured logging throughout `vault_writer/rag/`: log intent classification result and confidence; log search query + result count + top similarity score; log RAG answer source count; log index upsert (file_path, hash_changed); log similarity notices found; never log note content or query text
+- [x] T024 [P] Add structured logging throughout `vault_writer/rag/`: log intent classification result and confidence; log search query + result count + top similarity score; log RAG answer source count; log index upsert (file_path, hash_changed); log similarity notices found; never log note content or query text
 
-- [ ] T025 [P] Add fallback handling in `telegram/handlers/message.py` intent classification: if embedding backend raises `RuntimeError` (Ollama offline) or `ImportError` (sentence-transformers not installed), catch silently, default to `IntentType.NEW_NOTE`, log warning once per session
+- [x] T025 [P] Add fallback handling in `telegram/handlers/message.py` intent classification: if embedding backend raises `RuntimeError` (Ollama offline) or `ImportError` (sentence-transformers not installed), catch silently, default to `IntentType.NEW_NOTE`, log warning once per session
 
-- [ ] T026 [P] Add `format_index_building_notice() -> str` to `telegram/formatter.py`; in `vault_writer/rag/vector_store.py` expose `_building: bool` flag; in `handle_message()` if intent is RAG/search and `store._building`, prepend "⏳ Індекс будується — результати можуть бути неповними." to reply
+- [x] T026 [P] Add `format_index_building_notice() -> str` to `telegram/formatter.py`; in `vault_writer/rag/vector_store.py` expose `_building: bool` flag; in `handle_message()` if intent is RAG/search and `store._building`, prepend "⏳ Індекс будується — результати можуть бути неповними." to reply
 
-- [ ] T027 [P] Add `data/chroma/` to `.gitignore` and update `quickstart.md` validation checklist status to reflect implemented tasks
+- [x] T027 [P] Add `data/chroma/` to `.gitignore` and update `quickstart.md` validation checklist status to reflect implemented tasks
 
-- [ ] T028 Run `quickstart.md` validation checklist end-to-end: both packages installed, background indexing starts on launch, `/reindex` works, RAG query returns citations, `/search` returns semantic results, duplicate detection triggers, restart preserves index
+- [x] T028 Run `quickstart.md` validation checklist end-to-end: both packages installed, background indexing starts on launch, `/reindex` works, RAG query returns citations, `/search` returns semantic results, duplicate detection triggers, restart preserves index
 
 ---
 

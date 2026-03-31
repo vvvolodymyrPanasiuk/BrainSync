@@ -104,14 +104,18 @@ async def _handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         index = context.bot_data["index"]
         stats = context.bot_data["stats"]
         provider = context.bot_data.get("provider")
+        vector_store = context.bot_data.get("vector_store")
 
         create_result = await _run_create_note(
-            clean_text, note_type, None, config, index, stats, provider
+            clean_text, note_type, None, config, index, stats, provider, vector_store
         )
 
         if create_result.get("success"):
-            from telegram.formatter import format_confirmation
+            from telegram.formatter import format_confirmation, format_similarity_notice
             reply = format_confirmation(create_result["file_path"])
+            notices = create_result.get("similarity_notices", [])
+            if notices:
+                reply += "\n\n" + format_similarity_notice(notices)
             if config.git.enabled and config.git.auto_commit:
                 _git_commit(create_result["file_path"], config)
         else:
@@ -164,14 +168,18 @@ async def _handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
         index = context.bot_data["index"]
         stats = context.bot_data["stats"]
+        vector_store = context.bot_data.get("vector_store")
 
         create_result = await _run_create_note(
-            clean_text or "photo", note_type, None, config, index, stats, provider
+            clean_text or "photo", note_type, None, config, index, stats, provider, vector_store
         )
 
         if create_result.get("success"):
-            from telegram.formatter import format_confirmation
+            from telegram.formatter import format_confirmation, format_similarity_notice
             reply = format_confirmation(create_result["file_path"])
+            notices = create_result.get("similarity_notices", [])
+            if notices:
+                reply += "\n\n" + format_similarity_notice(notices)
             if config.git.enabled and config.git.auto_commit:
                 _git_commit(create_result["file_path"], config)
         else:
@@ -218,6 +226,7 @@ async def _handle_document(
         index = context.bot_data["index"]
         stats = context.bot_data["stats"]
         provider = context.bot_data.get("provider")
+        vector_store = context.bot_data.get("vector_store")
         caption = update.message.caption or ""
 
         if media_type == MediaType.PDF:
@@ -253,15 +262,19 @@ async def _handle_document(
                 index,
                 stats,
                 provider,
+                vector_store,
                 content_override=extracted.full_text,
             )
 
             if create_result.get("success"):
-                from telegram.formatter import format_confirmation
+                from telegram.formatter import format_confirmation, format_similarity_notice
                 reply = format_confirmation(create_result["file_path"])
                 if extracted.truncated:
                     from telegram.formatter import format_pdf_truncated_notice
                     reply += f"\n{format_pdf_truncated_notice(extracted.pages_extracted)}"
+                notices = create_result.get("similarity_notices", [])
+                if notices:
+                    reply += "\n\n" + format_similarity_notice(notices)
                 if config.git.enabled and config.git.auto_commit:
                     _git_commit(create_result["file_path"], config)
             else:
@@ -273,12 +286,15 @@ async def _handle_document(
             note_type, clean_text = detect_prefix(text, config.prefixes)
 
             create_result = await _run_create_note(
-                clean_text, note_type, None, config, index, stats, provider
+                clean_text, note_type, None, config, index, stats, provider, vector_store
             )
 
             if create_result.get("success"):
-                from telegram.formatter import format_confirmation
+                from telegram.formatter import format_confirmation, format_similarity_notice
                 reply = format_confirmation(create_result["file_path"])
+                notices = create_result.get("similarity_notices", [])
+                if notices:
+                    reply += "\n\n" + format_similarity_notice(notices)
                 if config.git.enabled and config.git.auto_commit:
                     _git_commit(create_result["file_path"], config)
             else:
@@ -303,12 +319,13 @@ async def _run_create_note(
     index,
     stats,
     provider,
+    vector_store=None,
     content_override: str | None = None,
 ) -> dict:
     loop = asyncio.get_running_loop()
     fn = functools.partial(
         handle_create_note,
-        text, note_type, folder, config, index, stats, provider,
+        text, note_type, folder, config, index, stats, provider, vector_store,
         content_override=content_override,
     )
     return await loop.run_in_executor(None, fn)

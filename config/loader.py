@@ -81,6 +81,17 @@ class MediaConfig:
 
 
 @dataclass
+class EmbeddingConfig:
+    backend: str = "sentence-transformers"   # "sentence-transformers" | "ollama"
+    model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    ollama_embed_url: str = "http://localhost:11434"
+    index_path: str = "data/chroma"
+    similarity_duplicate_threshold: float = 0.85
+    similarity_related_threshold: float = 0.70
+    top_k_results: int = 5
+
+
+@dataclass
 class AppConfig:
     ai: AIConfig
     vault: VaultConfig
@@ -96,6 +107,7 @@ class AppConfig:
     logging_log_path: str
     config_path: str               # absolute path to config.yaml (for hot-write)
     media: MediaConfig = field(default_factory=MediaConfig)
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     prefixes: dict[str, list[str]] = field(default_factory=dict)
 
 
@@ -133,6 +145,7 @@ def load_config(config_path: str) -> AppConfig:
     logging_raw = raw.get("logging", {})
     prefixes_raw = raw.get("prefixes", {})
     media_raw = raw.get("media", {})
+    embedding_raw = raw.get("embedding", {})
 
     # ── Validation ────────────────────────────────────────────────────────────
     errors: list[str] = []
@@ -230,6 +243,19 @@ def load_config(config_path: str) -> AppConfig:
             pdf_ai_context_chars=int(media_raw.get("pdf_ai_context_chars", 3000)),
             max_file_size_mb=int(media_raw.get("max_file_size_mb", 20)),
         ),
+        embedding=EmbeddingConfig(
+            backend=str(embedding_raw.get("backend", "sentence-transformers")),
+            model=str(embedding_raw.get("model", "paraphrase-multilingual-MiniLM-L12-v2")),
+            ollama_embed_url=str(embedding_raw.get("ollama_embed_url", "http://localhost:11434")),
+            index_path=str(embedding_raw.get("index_path", "data/chroma")),
+            similarity_duplicate_threshold=float(
+                embedding_raw.get("similarity_duplicate_threshold", 0.85)
+            ),
+            similarity_related_threshold=float(
+                embedding_raw.get("similarity_related_threshold", 0.70)
+            ),
+            top_k_results=int(embedding_raw.get("top_k_results", 5)),
+        ),
         prefixes=prefixes_raw or {
             "note": ["нотатка:", "note:"],
             "task": ["задача:", "task:", "todo:"],
@@ -269,6 +295,14 @@ def get_ai_provider(config: AppConfig):
             vision_model=config.ai.ollama_vision_model,
         )
     raise ValueError(f"Unsupported AI provider: {config.ai.provider!r}")
+
+
+def get_embedding_provider(config: AppConfig):
+    """Return EmbeddingProvider instance based on config.embedding.backend."""
+    from vault_writer.rag.embedder import OllamaEmbedder, SentenceTransformersEmbedder
+    if config.embedding.backend == "ollama":
+        return OllamaEmbedder(config.embedding.ollama_embed_url, config.embedding.model)
+    return SentenceTransformersEmbedder(config.embedding.model)
 
 
 def update_processing_mode(config_path: str, mode: str) -> None:

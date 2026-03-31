@@ -1,0 +1,150 @@
+"""VectorStore: ChromaDB wrapper for vault note embeddings."""
+from __future__ import annotations
+
+import hashlib
+import logging
+from pathlib import Path
+
+from vault_writer.rag.embedder import EmbeddingProvider
+from vault_writer.rag.engine import SearchResult, SimilarityNotice
+
+logger = logging.getLogger(__name__)
+
+_COLLECTION_NAME = "vault_notes"
+
+
+class VectorStore:
+    def __init__(self, index_path: str, embedder: EmbeddingProvider) -> None:
+        import chromadb
+        self._embedder = embedder
+        self._building = False
+        client = chromadb.PersistentClient(path=index_path)
+        self._collection = client.get_or_create_collection(
+            name=_COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+        )
+        count = self._collection.count()
+        if count > 0:
+            logger.info("VectorStore loaded existing index: %d notes", count)
+        else:
+            logger.info("VectorStore initialised empty index at %s", index_path)
+
+    def upsert_note(self, file_path: str, content: str) -> None:
+        """Embed and upsert a note; skip if content hash unchanged."""
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        existing = self._collection.get(ids=[file_path], include=["metadatas"])
+        if existing["ids"] and existing["metadatas"][0].get("hash") == content_hash:
+            logger.debug("upsert_note: unchanged hash, skipping %s", file_path)
+            return
+        embeddings = self._embedder.embed([content])
+        self._collection.upsert(
+            ids=[file_path],
+            embeddings=embeddings,
+            documents=[content],
+            metadatas=[{"hash": content_hash, "path": file_path}],
+        )
+        logger.debug("upsert_note: indexed %s (hash=%s)", file_path, content_hash[:8])
+
+    def search(self, query: str, top_k: int) -> list[SearchResult]:
+        """Semantic search over vault notes. Returns ranked SearchResult list."""
+        if self._collection.count() == 0:
+            return []
+        embeddings = self._embedder.embed([query])
+        results = self._collection.query(
+            query_embeddings=embeddings,
+            n_results=min(top_k, self._collection.count()),
+            include=["documents", "metadatas", "distances"],
+        )
+        search_results = []
+        ids = results.get("ids", [[]])[0]
+        documents = results.get("documents", [[]])[0]
+        distances = results.get("distances", [[]])[0]
+        for doc_id, document, distance in zip(ids, documents, distances):
+            similarity = max(0.0, 1.0 - distance)
+            excerpt = document[:300] if document else ""
+            search_results.append(SearchResult(
+                file_path=doc_id,
+                excerpt=excerpt,
+                similarity=round(similarity, 4),
+            ))
+        logger.info(
+            "search: query='%.50s' returned %d results, top_similarity=%.2f",
+            query,
+            len(search_results),
+            search_results[0].similarity if search_results else 0.0,
+        )
+        return search_results
+
+    def find_similar(
+        self,
+        content: str,
+        exclude_path: str,
+        top_k: int,
+        duplicate_threshold: float = 0.85,
+        related_threshold: float = 0.70,
+    ) -> list[SimilarityNotice]:
+        """Find notes similar to content, excluding the note itself."""
+        if self._collection.count() == 0:
+            return []
+        embeddings = self._embedder.embed([content])
+        n = min(top_k + 1, self._collection.count())
+        results = self._collection.query(
+            query_embeddings=embeddings,
+            n_results=n,
+            include=["metadatas", "distances"],
+        )
+        notices = []
+        ids = results.get("ids", [[]])[0]
+        distances = results.get("distances", [[]])[0]
+        for doc_id, distance in zip(ids, distances):
+            if doc_id == exclude_path:
+                continue
+            similarity = max(0.0, 1.0 - distance)
+            if similarity >= related_threshold:
+                notices.append(SimilarityNotice(
+                    matched_path=doc_id,
+                    similarity=round(similarity, 4),
+                    is_duplicate=similarity >= duplicate_threshold,
+                ))
+            if len(notices) >= top_k:
+                break
+        if notices:
+            logger.info(
+                "find_similar: found %d similar notes for path=%s", len(notices), exclude_path
+            )
+        return notices
+
+    def delete_note(self, file_path: str) -> None:
+        """Remove a note from the index."""
+        self._collection.delete(ids=[file_path])
+        logger.debug("delete_note: removed %s", file_path)
+
+    def count(self) -> int:
+        return self._collection.count()
+
+    def is_ready(self) -> bool:
+        """True if collection exists and has at least one indexed note."""
+        return self._collection.count() > 0
+
+    def build_from_vault(self, vault_path: str, config=None) -> int:
+        """Scan all .md files in vault (excluding MoC files) and upsert each. Returns count."""
+        self._building = True
+        try:
+            vault = Path(vault_path)
+            count = 0
+            for md_file in vault.rglob("*.md"):
+                # Skip MoC files (names starting with "0 ")
+                if md_file.name.startswith("0 "):
+                    continue
+                try:
+                    content = md_file.read_text(encoding="utf-8", errors="replace")
+                    if content.strip():
+                        rel_path = str(md_file.relative_to(vault))
+                        self.upsert_note(rel_path, content)
+                        count += 1
+                except Exception as exc:
+                    logger.warning("build_from_vault: failed to index %s: %s", md_file, exc)
+            logger.info("build_from_vault: indexed %d notes from %s", count, vault_path)
+            return count
+        finally:
+            self._building = False

@@ -6,3 +6,5 @@ gitpython
 pytest
 faster-whisper
 pypdf
+chromadb
+sentence-transformers

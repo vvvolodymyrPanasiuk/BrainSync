@@ -6,7 +6,7 @@ from datetime import time as _time
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 
-def build_application(config, index, stats, provider) -> Application:
+def build_application(config, index, stats, provider, vector_store=None) -> Application:
     """Build PTB Application with all handlers and job queue configured."""
     app = (
         Application.builder()
@@ -19,11 +19,12 @@ def build_application(config, index, stats, provider) -> Application:
     app.bot_data["index"] = index
     app.bot_data["stats"] = stats
     app.bot_data["provider"] = provider
+    app.bot_data["vector_store"] = vector_store
 
     # Command handlers
     from telegram.handlers.commands import (
         cmd_help, cmd_idea, cmd_journal, cmd_mode,
-        cmd_note, cmd_search, cmd_status, cmd_task,
+        cmd_note, cmd_reindex, cmd_search, cmd_status, cmd_task,
     )
     app.add_handler(CommandHandler("note", cmd_note))
     app.add_handler(CommandHandler("task", cmd_task))
@@ -33,6 +34,7 @@ def build_application(config, index, stats, provider) -> Application:
     app.add_handler(CommandHandler("mode", cmd_mode))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("reindex", cmd_reindex))
 
     # Plain-text message handler
     from telegram.handlers.message import handle_message
