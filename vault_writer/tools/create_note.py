@@ -39,6 +39,7 @@ def handle_create_note(
     stats,          # SessionStats
     provider=None,  # AIProvider | None
     claude_code_session_tokens: int = 0,
+    content_override: str | None = None,
 ) -> dict:
     """Orchestrate full note creation: classify → format → enrich → write → MoC → stats."""
     # Claude Code session token limit check (T067)
@@ -92,8 +93,13 @@ def handle_create_note(
     else:
         content = _default_body(text)
 
+    # ── Content override (e.g. full PDF text) ─────────────────────────────────
+    if content_override is not None:
+        content = content_override
+
     # ── Enrich (full mode) ────────────────────────────────────────────────────
-    if provider is not None and mode == ProcessingMode.FULL and config.enrichment_add_wikilinks:
+    # Skip enrichment when content_override is set — sending 50 pages to AI is wasteful
+    if content_override is None and provider is not None and mode == ProcessingMode.FULL and config.enrichment_add_wikilinks:
         try:
             from vault_writer.ai.enricher import add_wikilinks
             content = add_wikilinks(content, index, config)

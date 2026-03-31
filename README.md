@@ -2,9 +2,9 @@
 
 **A local AI-powered personal knowledge management system.**
 
-Send a message to your Telegram bot → Claude AI classifies and formats it → a structured Markdown note appears in your Obsidian vault. That's it.
+Send a message, voice note, photo, or PDF to your Telegram bot → AI classifies and formats it → a structured Markdown note appears in your Obsidian vault. That's it.
 
-BrainSync runs as a background service on your machine. Everything stays local except the AI API call. No cloud storage, no subscriptions, no web dashboard — just your thoughts, organized automatically.
+BrainSync runs as a background service on your machine. Voice transcription and PDF extraction happen entirely on-device. Everything stays local except optional AI API calls. No cloud storage, no subscriptions, no web dashboard — just your thoughts, organized automatically.
 
 ---
 
@@ -24,15 +24,20 @@ No manual filing. No inbox to process later. Notes are organized at the moment o
 
 ## Features
 
-- **Telegram → Obsidian** — plain text in, structured `.md` note out
-- **AI classification** — Claude automatically detects type (note / task / idea / journal), topic, and destination folder
+- **Telegram → Obsidian** — text, voice, photo, PDF, or `.txt`/`.md` file in, structured `.md` note out
+- **Voice transcription** — on-device speech-to-text via `faster-whisper`; Ukrainian supported; no API key needed
+- **Photo description** — AI describes images (Claude vision or Ollama `llava`); falls back gracefully if vision unavailable
+- **PDF extraction** — full text extracted locally with `pypdf`; first 3 000 chars sent to AI for classification, full text saved to vault
+- **Plain text / Markdown files** — file content saved directly as a note
+- **AI classification** — automatically detects type (note / task / idea / journal), topic, and destination folder
 - **Three processing modes** — `minimal` (fast, 0–1 AI calls), `balanced` (1–2), `full` (2–3 + auto wikilinks)
+- **Fully offline capable** — configure `ai.provider: ollama` with `llava` for vision; no external API calls required
 - **Map of Content (MoC)** — index files auto-updated when new notes are added to a topic
 - **Vault search** — `/search Redis` returns matching notes with excerpts, zero AI calls
 - **Scheduled digests** — daily, weekly, and monthly summaries sent automatically to Telegram
 - **Git sync** — vault auto-committed and pushed after every note
 - **MCP server** — `vault_writer/server.py` registers as an MCP server in Claude Code sessions
-- **Inline prefixes** — `task: buy milk` or `задача: купити молоко` without a slash command
+- **Inline prefixes** — `task: buy milk`, `задача: купити молоко`, or caption on any media message
 
 ---
 
@@ -42,10 +47,11 @@ No manual filing. No inbox to process later. Notes are organized at the moment o
 
 - [Python 3.12+](https://python.org/downloads) — check "Add Python to PATH" during installation
 - [Git](https://git-scm.com)
+- [ffmpeg](https://ffmpeg.org/download.html) — required for voice message decoding (`winget install ffmpeg` on Windows)
 - An existing [Obsidian](https://obsidian.md) vault (e.g. `C:\SecondaryBrain`)
 - A Telegram bot token — create one via [@BotFather](https://t.me/BotFather)
 - Your Telegram user ID — get it from [@userinfobot](https://t.me/userinfobot)
-- An [Anthropic API key](https://console.anthropic.com)
+- An [Anthropic API key](https://console.anthropic.com) — or run fully offline with [Ollama](https://ollama.com)
 
 ---
 
@@ -136,6 +142,15 @@ Any plain message without a prefix is automatically classified by AI.
 You:  learned that CQRS separates read and write models
 Bot:  ✓ Saved → Architecture/0004 CQRS pattern.md
 
+You:  [voice message — 20 seconds, Ukrainian]
+Bot:  ✓ Saved → General/0005 voice note.md
+
+You:  [photo of a whiteboard with caption "ідея:"]
+Bot:  ✓ Saved → Ideas/0006 whiteboard idea.md
+
+You:  [PDF file — 12 pages]
+Bot:  ✓ Saved → General/0007 article.md
+
 You:  /task buy groceries
 Bot:  ✓ Saved → Tasks/0012 buy groceries.md
 
@@ -172,11 +187,15 @@ BrainSync/
 │   │
 │   ├── ai/
 │   │   ├── provider.py            # AIProvider abstract base + ProcessingMode enum
-│   │   ├── anthropic_provider.py  # Claude implementation
-│   │   ├── ollama_provider.py     # Ollama stub (v1.1)
+│   │   ├── anthropic_provider.py  # Claude implementation (text + vision)
+│   │   ├── ollama_provider.py     # Ollama implementation (text + vision via llava etc.)
+│   │   ├── transcriber.py         # Whisper on-device voice transcription
 │   │   ├── classifier.py          # classify() → ClassificationResult
 │   │   ├── formatter.py           # format_note() → structured markdown body
 │   │   └── enricher.py            # add_wikilinks() — full mode only
+│   │
+│   ├── media/
+│   │   └── pdf_extractor.py       # Local PDF text extraction via pypdf
 │   │
 │   ├── vault/
 │   │   ├── writer.py              # write_note(), update_moc(), sequential numbering
@@ -196,6 +215,7 @@ BrainSync/
 │   └── handlers/
 │       ├── commands.py            # All slash command handlers
 │       ├── message.py             # Plain-text handler + prefix detection + retry
+│       ├── media.py               # Voice / photo / PDF / text file handlers
 │       └── schedule.py            # Daily / weekly / monthly digest jobs
 │
 ├── git_sync/
@@ -349,9 +369,10 @@ BrainSync runs as two separate processes that both use `vault_writer/` as a shar
 
 ```yaml
 ai:
-  provider: "anthropic"           # "anthropic" | "ollama" (ollama planned for v1.1)
-  model: "claude-sonnet-4-6"      # Model ID used for all AI calls
+  provider: "anthropic"           # "anthropic" | "ollama"
+  model: "claude-sonnet-4-6"      # Model ID used for all AI calls (text + vision)
   ollama_url: "http://localhost:11434"
+  ollama_vision_model: ""         # Ollama vision model for photos — e.g. "llava"; empty = disable
   processing_mode: "balanced"     # See processing modes table below
   agents_file: ".brain/AGENTS.md" # Universal AI instructions injected into every prompt
   skills_path: ".brain/skills/"   # Folder containing skill-specific instructions
@@ -445,6 +466,36 @@ schedule:
 - **Daily digest** — today's notes + all pending tasks (`- [ ] ...` items across task-type notes)
 - **Weekly review** — note count grouped by topic for the past week
 - **Monthly review** — notes added this month + new topics introduced
+
+### Media settings
+
+```yaml
+media:
+  max_voice_duration_seconds: 300   # Reject voice messages longer than this
+  transcription_model: "small"      # Whisper model size: tiny / base / small / medium / large-v3
+  pdf_max_pages: 50                 # Maximum pages to extract from a PDF
+  pdf_ai_context_chars: 3000        # Characters sent to AI for classification (full text saved to vault)
+  max_file_size_mb: 20              # Maximum file size for documents (Telegram bot API limit)
+```
+
+The Whisper model (~466 MB for `small`) downloads automatically on first start. The bot sends a Telegram notification when the download begins and when it completes. All subsequent starts load from the local cache instantly.
+
+**Supported media types:**
+
+| Type | How to send | Result |
+|------|-------------|--------|
+| Voice message | Hold mic button in Telegram | Transcribed on-device → note |
+| Photo | Camera or gallery | AI description → note |
+| PDF | Attach file | Extracted text → note |
+| `.txt` / `.md` | Attach file | Content → note |
+| Video, sticker, GIF | Attach | Friendly error — not supported |
+
+**Captions as prefixes** — any supported prefix works as a Telegram caption on any media:
+
+```
+задача: купити молоко     ← caption on voice → saves as task note
+ідея: ця фотка нагадала  ← caption on photo → saves as idea note
+```
 
 ### Logging settings
 
@@ -542,8 +593,11 @@ Available tools:
 | Package | Purpose |
 |---------|---------|
 | `python-telegram-bot >= 20.0` | Async Telegram bot framework with built-in job scheduler |
-| `anthropic` | Official Claude AI SDK |
+| `anthropic` | Official Claude AI SDK (text + vision) |
 | `mcp` | Model Context Protocol server (stdio transport) |
 | `pyyaml` | Read and write `config.yaml` |
 | `gitpython` | Programmatic git operations on the vault |
+| `faster-whisper` | On-device voice transcription (Ukrainian, ~466 MB model) |
+| `pypdf` | Local PDF text extraction (no system dependencies) |
 | `pytest` | Testing |
+| `ffmpeg` (system) | Audio decoding for voice messages — `winget install ffmpeg` |

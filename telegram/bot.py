@@ -38,6 +38,12 @@ def build_application(config, index, stats, provider) -> Application:
     from telegram.handlers.message import handle_message
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Media message handlers
+    from telegram.handlers.media import handle_media_message
+    app.add_handler(MessageHandler(filters.VOICE, handle_media_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_media_message))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_media_message))
+
     # Scheduled jobs
     _register_scheduled_jobs(app, config)
 
