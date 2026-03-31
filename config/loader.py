@@ -33,6 +33,7 @@ class AIConfig:
     inject_vault_index: bool
     max_context_tokens: int
     api_key: str                   # NEVER logged or committed
+    ollama_vision_model: str = ""  # vision model for Ollama (e.g. "llava")
 
 
 @dataclass
@@ -71,6 +72,15 @@ class ScheduleConfig:
 
 
 @dataclass
+class MediaConfig:
+    max_voice_duration_seconds: int = 300
+    transcription_model: str = "small"
+    pdf_max_pages: int = 50
+    pdf_ai_context_chars: int = 3000
+    max_file_size_mb: int = 20
+
+
+@dataclass
 class AppConfig:
     ai: AIConfig
     vault: VaultConfig
@@ -85,6 +95,7 @@ class AppConfig:
     logging_log_ai_decisions: bool
     logging_log_path: str
     config_path: str               # absolute path to config.yaml (for hot-write)
+    media: MediaConfig = field(default_factory=MediaConfig)
     prefixes: dict[str, list[str]] = field(default_factory=dict)
 
 
@@ -121,6 +132,7 @@ def load_config(config_path: str) -> AppConfig:
     enrichment_raw = raw.get("enrichment", {})
     logging_raw = raw.get("logging", {})
     prefixes_raw = raw.get("prefixes", {})
+    media_raw = raw.get("media", {})
 
     # ── Validation ────────────────────────────────────────────────────────────
     errors: list[str] = []
@@ -183,6 +195,7 @@ def load_config(config_path: str) -> AppConfig:
             inject_vault_index=ai_raw.get("inject_vault_index", True),
             max_context_tokens=ai_raw.get("max_context_tokens", 4000),
             api_key=api_key,
+            ollama_vision_model=ai_raw.get("ollama_vision_model", ""),
         ),
         vault=VaultConfig(
             path=vault_path,
@@ -210,6 +223,13 @@ def load_config(config_path: str) -> AppConfig:
         logging_log_ai_decisions=logging_raw.get("log_ai_decisions", True),
         logging_log_path=logging_raw.get("log_path", "logs/vault.log"),
         config_path=str(path.resolve()),
+        media=MediaConfig(
+            max_voice_duration_seconds=int(media_raw.get("max_voice_duration_seconds", 300)),
+            transcription_model=str(media_raw.get("transcription_model", "small")),
+            pdf_max_pages=int(media_raw.get("pdf_max_pages", 50)),
+            pdf_ai_context_chars=int(media_raw.get("pdf_ai_context_chars", 3000)),
+            max_file_size_mb=int(media_raw.get("max_file_size_mb", 20)),
+        ),
         prefixes=prefixes_raw or {
             "note": ["нотатка:", "note:"],
             "task": ["задача:", "task:", "todo:"],
@@ -243,7 +263,11 @@ def get_ai_provider(config: AppConfig):
     if config.ai.provider == "anthropic":
         return AnthropicProvider(api_key=config.ai.api_key, model=config.ai.model)
     if config.ai.provider == "ollama":
-        return OllamaProvider()
+        return OllamaProvider(
+            base_url=config.ai.ollama_url,
+            model=config.ai.model,
+            vision_model=config.ai.ollama_vision_model,
+        )
     raise ValueError(f"Unsupported AI provider: {config.ai.provider!r}")
 
 

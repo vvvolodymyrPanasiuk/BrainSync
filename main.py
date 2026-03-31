@@ -13,6 +13,47 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+async def _ensure_infrastructure_ready(app) -> None:
+    """Post-init hook: ensure Whisper model is cached; blocks until download completes."""
+    import telegram.handlers.media as _media_mod
+
+    config = app.bot_data["config"]
+    model_size = config.media.transcription_model
+    allowed_ids = config.telegram.allowed_user_ids
+
+    # Check if model already cached (huggingface hub directory)
+    cache_root = Path.home() / ".cache" / "huggingface" / "hub"
+    model_cached = any(
+        p.is_dir()
+        for p in cache_root.glob("*")
+        if model_size in p.name
+    ) if cache_root.exists() else False
+
+    if not model_cached and allowed_ids:
+        logger.info("Whisper model '%s' not found — downloading…", model_size)
+        try:
+            from telegram.formatter import format_model_downloading
+            await app.bot.send_message(chat_id=allowed_ids[0], text=format_model_downloading())
+        except Exception as exc:
+            logger.warning("Could not send download notification: %s", exc)
+
+    # Instantiate Transcriber (triggers model download if not cached — blocking)
+    from vault_writer.ai.transcriber import Transcriber
+    transcriber = Transcriber(model_size=model_size)
+    transcriber._load()  # force download now, not on first voice message
+
+    app.bot_data["transcriber"] = transcriber
+    _media_mod._READY = True
+    logger.info("Whisper model ready: %s", model_size)
+
+    if allowed_ids:
+        try:
+            from telegram.formatter import format_model_ready
+            await app.bot.send_message(chat_id=allowed_ids[0], text=format_model_ready())
+        except Exception as exc:
+            logger.warning("Could not send ready notification: %s", exc)
+
+
 def main() -> None:
     config_path = "config.yaml"
     if not Path(config_path).exists():
@@ -43,6 +84,10 @@ def main() -> None:
     # Start Telegram bot (blocking)
     from telegram.bot import build_application
     app = build_application(config, index, stats, provider)
+
+    # Infrastructure readiness gate: download Whisper model before accepting messages
+    app.post_init = _ensure_infrastructure_ready
+
     logger.info("Telegram bot starting — allowed_users=%s", config.telegram.allowed_user_ids)
     app.run_polling(drop_pending_updates=True)
 

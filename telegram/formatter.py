@@ -41,3 +41,39 @@ def format_ai_fallback(file_path: str) -> str:
         "⚠️ AI недоступний (rate limit). Нотатку збережено у minimal режимі.\n"
         f"→ {file_path}"
     )
+
+
+def format_voice_duration_error(max_seconds: int) -> str:
+    return f"⚠️ Голосове повідомлення надто довге. Максимум: {max_seconds} секунд."
+
+
+def format_media_processing_error() -> str:
+    return "❌ Помилка обробки медіа. Спробуйте ще раз."
+
+
+def format_unsupported_file_type() -> str:
+    return "⚠️ Непідтримуваний тип файлу. Підтримуються: pdf, txt, md."
+
+
+def format_model_downloading() -> str:
+    return "⏳ Завантаження моделі транскрипції…"
+
+
+def format_model_ready() -> str:
+    return "✅ Модель готова. BrainSync запущено."
+
+
+def format_pdf_scanned_error() -> str:
+    return "⚠️ PDF містить лише відскановані зображення — текст недоступний."
+
+
+def format_pdf_truncated_notice(pages: int) -> str:
+    return f"ℹ️ PDF обрізано: збережено перших {pages} сторінок."
+
+
+def format_file_too_large(max_mb: int) -> str:
+    return f"⚠️ Файл надто великий. Максимум: {max_mb} МБ."
+
+
+def format_unsupported_media_types() -> str:
+    return "⚠️ Непідтримуваний тип медіа. Підтримуються: голосові, фото, PDF, txt, md."

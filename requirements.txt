@@ -4,3 +4,5 @@ mcp
 pyyaml
 gitpython
 pytest
+faster-whisper
+pypdf
