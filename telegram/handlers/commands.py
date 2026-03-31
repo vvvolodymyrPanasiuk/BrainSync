@@ -138,11 +138,54 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not query:
         await update.message.reply_text("Використання: /search <запит>")
         return
+
+    vector_store = context.bot_data.get("vector_store")
+    if vector_store is not None:
+        import asyncio
+        from vault_writer.rag.engine import search_vault
+        from telegram.formatter import format_semantic_search_results
+        try:
+            loop = asyncio.get_running_loop()
+            results = await loop.run_in_executor(
+                None, search_vault, query, vector_store, config.embedding.top_k_results
+            )
+            await update.message.reply_text(format_semantic_search_results(results, query))
+            return
+        except Exception as exc:
+            logger.warning("Semantic search failed, falling back to keyword: %s", exc)
+            from telegram.formatter import format_search_degraded_notice
+            await update.message.reply_text(format_search_degraded_notice())
+
+    # Fallback: keyword search
     from vault_writer.tools.search_notes import handle_search_notes
     index = context.bot_data["index"]
     result = handle_search_notes(query=query, limit=10, folder=None, index=index, vault_path=config.vault.path)
     from telegram.formatter import format_search_results
     await update.message.reply_text(format_search_results(result.get("results", []), query))
+
+
+async def cmd_reindex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+    vector_store = context.bot_data.get("vector_store")
+    if vector_store is None:
+        await update.message.reply_text("❌ Embedding backend недоступний. Перевірте налаштування.")
+        return
+
+    from telegram.formatter import format_reindex_done, format_reindex_start
+    await update.message.reply_text(format_reindex_start())
+
+    import asyncio
+    loop = asyncio.get_running_loop()
+    try:
+        count = await loop.run_in_executor(
+            None, vector_store.build_from_vault, config.vault.path, config.embedding
+        )
+        await update.message.reply_text(format_reindex_done(count))
+    except Exception as exc:
+        logger.error("cmd_reindex error: %s", exc)
+        await update.message.reply_text("❌ Embedding backend недоступний. Перевірте налаштування.")
 
 
 def _format_result(result: dict, config) -> str:

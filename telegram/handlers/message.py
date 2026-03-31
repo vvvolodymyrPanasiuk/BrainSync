@@ -1,4 +1,4 @@
-"""Telegram plain-text message handler with prefix detection and rate-limit retry."""
+"""Telegram plain-text message handler with intent routing and prefix detection."""
 from __future__ import annotations
 
 import asyncio
@@ -14,9 +14,12 @@ from vault_writer.vault.writer import NoteType
 
 logger = logging.getLogger(__name__)
 
+# Warning suppressed once per session to avoid log spam
+_INTENT_WARN_ISSUED = False
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Route plain-text Telegram message: auth → typing → prefix detect → save → reply."""
+    """Route plain-text Telegram message: auth → intent classify → RAG/search/save."""
     from telegram.handlers.commands import auth_check
     config = context.bot_data["config"]
     if not auth_check(update, config):
@@ -28,18 +31,101 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
-    # Detect inline prefix (нотатка:, task:, etc.)
-    note_type, clean_text = detect_prefix(text, config.prefixes)
+    provider = context.bot_data.get("provider")
+    vector_store = context.bot_data.get("vector_store")
 
+    # ── Intent classification ─────────────────────────────────────────────────
+    if provider is not None and vector_store is not None:
+        intent = await _classify_intent_safe(text, provider)
+    else:
+        from vault_writer.rag.intent import IntentType
+        intent = IntentType.NEW_NOTE
+
+    from vault_writer.rag.intent import IntentType
+
+    # ── RAG query ────────────────────────────────────────────────────────────
+    if intent == IntentType.RAG_QUERY and vector_store is not None:
+        await _handle_rag_query(text, update, context, vector_store, provider, config)
+        return
+
+    # ── Search query ─────────────────────────────────────────────────────────
+    if intent == IntentType.SEARCH_QUERY and vector_store is not None:
+        await _handle_search_query(text, update, context, vector_store, config)
+        return
+
+    # ── New note (default) ───────────────────────────────────────────────────
+    await _handle_new_note(text, update, context, config, vector_store)
+
+
+async def _classify_intent_safe(text: str, provider) -> object:
+    """Classify intent in executor; returns NEW_NOTE on any error."""
+    global _INTENT_WARN_ISSUED
+    from vault_writer.rag.intent import IntentType, classify_intent
+    try:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, classify_intent, text, provider)
+    except (RuntimeError, ImportError) as exc:
+        if not _INTENT_WARN_ISSUED:
+            logger.warning("Intent classification unavailable (%s) — defaulting to new_note", exc)
+            _INTENT_WARN_ISSUED = True
+        return IntentType.NEW_NOTE
+
+
+async def _handle_rag_query(text, update, context, vector_store, provider, config) -> None:
+    from vault_writer.rag.engine import answer_query
+    from telegram.formatter import (
+        format_index_building_notice, format_rag_answer, format_rag_not_found,
+    )
+
+    prefix = ""
+    if getattr(vector_store, "_building", False):
+        prefix = format_index_building_notice() + "\n\n"
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None, answer_query, text, vector_store, provider, config.embedding.top_k_results, config
+    )
+
+    if result.found:
+        reply = prefix + format_rag_answer(result.answer, result.sources)
+    else:
+        reply = prefix + format_rag_not_found()
+
+    await _reply_with_retry(update, reply)
+
+
+async def _handle_search_query(text, update, context, vector_store, config) -> None:
+    from vault_writer.rag.engine import search_vault
+    from telegram.formatter import format_index_building_notice, format_semantic_search_results
+
+    prefix = ""
+    if getattr(vector_store, "_building", False):
+        prefix = format_index_building_notice() + "\n\n"
+
+    loop = asyncio.get_running_loop()
+    results = await loop.run_in_executor(
+        None, search_vault, text, vector_store, config.embedding.top_k_results
+    )
+    reply = prefix + format_semantic_search_results(results, text)
+    await _reply_with_retry(update, reply)
+
+
+async def _handle_new_note(text, update, context, config, vector_store) -> None:
+    note_type, clean_text = detect_prefix(text, config.prefixes)
     index = context.bot_data["index"]
     stats = context.bot_data["stats"]
     provider = context.bot_data.get("provider")
 
-    result = await _run_create_note(clean_text, note_type, None, config, index, stats, provider)
+    result = await _run_create_note(
+        clean_text, note_type, None, config, index, stats, provider, vector_store
+    )
 
     if result.get("success"):
-        from telegram.formatter import format_confirmation
+        from telegram.formatter import format_confirmation, format_similarity_notice
         reply = format_confirmation(result["file_path"])
+        notices = result.get("similarity_notices", [])
+        if notices:
+            reply += "\n\n" + format_similarity_notice(notices)
         if config.git.enabled and config.git.auto_commit:
             _git_commit(result["file_path"], config)
     else:
@@ -56,14 +142,14 @@ async def _run_create_note(
     index,
     stats,
     provider,
+    vector_store=None,
 ) -> dict:
     """Run handle_create_note in executor (blocking file I/O + AI calls)."""
-    import asyncio
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         None,
         handle_create_note,
-        text, note_type, folder, config, index, stats, provider,
+        text, note_type, folder, config, index, stats, provider, vector_store,
     )
 
 
@@ -76,7 +162,6 @@ async def _reply_with_retry(update: Update, text: str, max_attempts: int = 3) ->
         except RetryAfter as exc:
             wait = exc.retry_after if attempt < max_attempts - 1 else None
             if wait is None:
-                from telegram.formatter import format_ai_fallback
                 await update.message.reply_text(
                     "⚠️ Telegram API тимчасово недоступний. Спробую ще раз пізніше."
                 )

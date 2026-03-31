@@ -77,3 +77,57 @@ def format_file_too_large(max_mb: int) -> str:
 
 def format_unsupported_media_types() -> str:
     return "⚠️ Непідтримуваний тип медіа. Підтримуються: голосові, фото, PDF, txt, md."
+
+
+# ── RAG / Semantic Search formatters ─────────────────────────────────────────
+
+def format_rag_answer(answer: str, sources: list[str]) -> str:
+    lines = ["💡 На основі твого vault:\n", answer]
+    if sources:
+        lines.append("\nДжерела:")
+        for src in sources:
+            lines.append(f"→ {src}")
+    return "\n".join(lines)
+
+
+def format_rag_not_found() -> str:
+    return "🔍 Нічого не знайдено у vault за цим запитом."
+
+
+def format_semantic_search_results(results: list, query: str) -> str:
+    if not results:
+        return f'Нічого не знайдено для "{query}"'
+    lines = [f'🔍 Знайдено {len(results)} нотаток для "{query}":\n']
+    for i, r in enumerate(results, 1):
+        pct = int(r.similarity * 100)
+        lines.append(f"{i}. {r.file_path} ({pct}%)\n   ...{r.excerpt[:200]}...")
+    return "\n".join(lines)
+
+
+def format_search_degraded_notice() -> str:
+    return "⚠️ Семантичний пошук недоступний — використовую keyword пошук."
+
+
+def format_similarity_notice(notices: list) -> str:
+    if not notices:
+        return ""
+    lines = []
+    for notice in notices:
+        pct = int(notice.similarity * 100)
+        if notice.is_duplicate:
+            lines.append(f"⚠️ Схожа нотатка вже існує:\n→ {notice.matched_path} ({pct}%)")
+        else:
+            lines.append(f"💡 Можливо пов'язана нотатка:\n→ {notice.matched_path} ({pct}%)")
+    return "\n".join(lines)
+
+
+def format_reindex_start() -> str:
+    return "⏳ Переіндексація vault…"
+
+
+def format_reindex_done(count: int) -> str:
+    return f"✅ Переіндексовано: {count} нотаток."
+
+
+def format_index_building_notice() -> str:
+    return "⏳ Індекс будується — результати можуть бути неповними."

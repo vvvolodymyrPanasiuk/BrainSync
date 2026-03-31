@@ -55,6 +55,20 @@ async def _ensure_infrastructure_ready(app) -> None:
         except Exception as exc:
             logger.warning("Could not send ready notification: %s", exc)
 
+    # Start background vault indexing (non-blocking)
+    vector_store = app.bot_data.get("vector_store")
+    if vector_store is not None:
+        import threading
+        def _build_index_background():
+            try:
+                count = vector_store.build_from_vault(config.vault.path, config.embedding)
+                logger.info("Background vault indexing complete: %d notes", count)
+            except Exception as exc:
+                logger.warning("Background vault indexing failed: %s", exc)
+        t = threading.Thread(target=_build_index_background, daemon=True, name="vault-indexer")
+        t.start()
+        logger.info("Background vault indexing started")
+
 
 def main() -> None:
     config_path = "config.yaml"
@@ -62,7 +76,7 @@ def main() -> None:
         print(f"ERROR: {config_path} not found. Run python setup.py first.")
         sys.exit(1)
 
-    from config.loader import SessionStats, get_ai_provider, load_config, setup_logging
+    from config.loader import SessionStats, get_ai_provider, get_embedding_provider, load_config, setup_logging
     config = load_config(config_path)
     setup_logging(config)
     logger.info("BrainSync starting — mode=%s provider=%s", config.ai.processing_mode, config.ai.provider)
@@ -83,9 +97,19 @@ def main() -> None:
         logger.warning("AI provider init failed: %s — running in minimal mode", exc)
         provider = None
 
+    # Init embedding provider + vector store
+    from vault_writer.rag.vector_store import VectorStore
+    try:
+        embedder = get_embedding_provider(config)
+        vector_store = VectorStore(config.embedding.index_path, embedder)
+        logger.info("VectorStore initialised at %s", config.embedding.index_path)
+    except Exception as exc:
+        logger.warning("VectorStore init failed: %s — RAG features disabled", exc)
+        vector_store = None
+
     # Start Telegram bot (blocking)
     from telegram.bot import build_application
-    app = build_application(config, index, stats, provider)
+    app = build_application(config, index, stats, provider, vector_store=vector_store)
 
     # Infrastructure readiness gate: download Whisper model before accepting messages
     app.post_init = _ensure_infrastructure_ready

@@ -38,6 +38,7 @@ def handle_create_note(
     index: VaultIndex,
     stats,          # SessionStats
     provider=None,  # AIProvider | None
+    vector_store=None,  # VectorStore | None
     claude_code_session_tokens: int = 0,
     content_override: str | None = None,
 ) -> dict:
@@ -141,6 +142,25 @@ def handle_create_note(
     stats.notes_saved_today += 1
     stats.vault_notes_total = index.total_notes
 
+    # ── Vector index + Similarity check ──────────────────────────────────────
+    similarity_notices = []
+    if vector_store is not None:
+        try:
+            vector_store.upsert_note(file_path, content)
+            embedding_config = getattr(config, "embedding", None)
+            dup_threshold = getattr(embedding_config, "similarity_duplicate_threshold", 0.85)
+            rel_threshold = getattr(embedding_config, "similarity_related_threshold", 0.70)
+            raw_notices = vector_store.find_similar(
+                content,
+                exclude_path=file_path,
+                top_k=3,
+                duplicate_threshold=dup_threshold,
+                related_threshold=rel_threshold,
+            )
+            similarity_notices = [n for n in raw_notices if n.similarity >= rel_threshold]
+        except Exception as exc:
+            logger.warning("vector_store upsert/find_similar error: %s", exc)
+
     return {
         "success": True,
         "file_path": file_path,
@@ -148,6 +168,7 @@ def handle_create_note(
         "folder": classification.folder,
         "title": note.title,
         "mode_used": mode.value,
+        "similarity_notices": similarity_notices,
     }
 
 
