@@ -88,7 +88,7 @@ async def _handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await voice_file.download_to_drive(tmp_path)
 
         transcriber = context.bot_data.get("transcriber")
-        result = await asyncio.get_event_loop().run_in_executor(
+        result = await asyncio.get_running_loop().run_in_executor(
             None, transcriber.transcribe, tmp_path
         )
         logger.info(
@@ -141,7 +141,7 @@ async def _handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         description = ""
         try:
             if provider is not None:
-                description = await asyncio.get_event_loop().run_in_executor(
+                description = await asyncio.get_running_loop().run_in_executor(
                     None,
                     lambda: provider.complete_with_image(
                         "Опиши що зображено на фото детально.",
@@ -222,7 +222,7 @@ async def _handle_document(
 
         if media_type == MediaType.PDF:
             from vault_writer.media.pdf_extractor import extract
-            extracted = await asyncio.get_event_loop().run_in_executor(
+            extracted = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: extract(
                     file_bytes,
@@ -305,7 +305,7 @@ async def _run_create_note(
     provider,
     content_override: str | None = None,
 ) -> dict:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     fn = functools.partial(
         handle_create_note,
         text, note_type, folder, config, index, stats, provider,

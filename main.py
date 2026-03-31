@@ -37,10 +37,12 @@ async def _ensure_infrastructure_ready(app) -> None:
         except Exception as exc:
             logger.warning("Could not send download notification: %s", exc)
 
-    # Instantiate Transcriber (triggers model download if not cached — blocking)
+    # Instantiate Transcriber (triggers model download if not cached — blocking I/O)
     from vault_writer.ai.transcriber import Transcriber
+    import asyncio as _asyncio
     transcriber = Transcriber(model_size=model_size)
-    transcriber._load()  # force download now, not on first voice message
+    loop = _asyncio.get_running_loop()
+    await loop.run_in_executor(None, transcriber._load)  # offload blocking download
 
     app.bot_data["transcriber"] = transcriber
     _media_mod._READY = True

@@ -98,7 +98,8 @@ def handle_create_note(
         content = content_override
 
     # ── Enrich (full mode) ────────────────────────────────────────────────────
-    if provider is not None and mode == ProcessingMode.FULL and config.enrichment_add_wikilinks:
+    # Skip enrichment when content_override is set — sending 50 pages to AI is wasteful
+    if content_override is None and provider is not None and mode == ProcessingMode.FULL and config.enrichment_add_wikilinks:
         try:
             from vault_writer.ai.enricher import add_wikilinks
             content = add_wikilinks(content, index, config)
