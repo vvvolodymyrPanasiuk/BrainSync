@@ -3,11 +3,57 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import sys
 import threading
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# ── PID file: kill any stale previous instance ────────────────────────────────
+
+_PID_FILE = Path("bot_runner.pid")
+
+
+def _write_pid() -> None:
+    _PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
+
+
+def _clear_pid() -> None:
+    try:
+        _PID_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _kill_stale() -> None:
+    """If a PID file exists and that process is still running, kill it."""
+    if not _PID_FILE.exists():
+        return
+    try:
+        old_pid = int(_PID_FILE.read_text(encoding="utf-8").strip())
+    except Exception:
+        _PID_FILE.unlink(missing_ok=True)
+        return
+    if old_pid == os.getpid():
+        return
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            handle = ctypes.windll.kernel32.OpenProcess(0x0001, False, old_pid)
+            if handle:
+                ctypes.windll.kernel32.TerminateProcess(handle, 1)
+                ctypes.windll.kernel32.CloseHandle(handle)
+        else:
+            os.kill(old_pid, signal.SIGTERM)
+        import time as _time
+        _time.sleep(1)
+        logger.info("Killed stale bot process PID=%d", old_pid)
+    except Exception:
+        pass  # already gone — that's fine
+    _PID_FILE.unlink(missing_ok=True)
+
 
 # ── Windows console: UTF-8 + window title ────────────────────────────────────
 if sys.platform == "win32":
@@ -98,6 +144,12 @@ async def _notify_shutdown(app) -> None:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
+    # Kill any leftover bot instance before starting
+    _kill_stale()
+    _write_pid()
+    import atexit
+    atexit.register(_clear_pid)
+
     from config.loader import (
         SessionStats, get_ai_provider, get_embedding_provider,
         load_config, setup_logging,
