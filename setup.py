@@ -150,7 +150,14 @@ def main() -> None:
 
     # ── Git sync ──────────────────────────────────────────────────────────────
     _hr()
-    print("\nStep 6/6 — Git sync (optional)\n")
+    print("\nStep 6/7 — System message language\n")
+    locale_idx = _pick(
+        "Bot system messages language:",
+        ["English (default)", "Ukrainian"],
+    )
+    locale = "uk" if locale_idx == 2 else "en"
+
+    print("\nStep 7/7 — Git sync (optional)\n")
     git_enabled = _ask_bool("Auto-commit notes to git?", default=True)
     git_push = False
     if git_enabled:
@@ -174,6 +181,7 @@ def main() -> None:
         git_push=git_push,
         embed_backend=embed_backend,
         embed_model=embed_model,
+        locale=locale,
     )
 
     print("Copying .brain/ templates…")
@@ -201,6 +209,7 @@ def main() -> None:
 def _write_config(**kw) -> None:
     import yaml
     cfg = {
+        "locale": kw.get("locale", "en"),
         "ai": {
             "provider": kw["ai_provider"],
             "model": kw["model"],

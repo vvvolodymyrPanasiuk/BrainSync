@@ -118,12 +118,14 @@ async def _handle_search_query(text, update, context, vector_store, config) -> N
 async def _handle_chat(text: str, update, provider) -> None:
     """Respond to casual chat / general AI questions without saving to vault."""
     from telegram.formatter import format_chat_reply
+    from telegram.i18n import t
     if provider is not None:
+        prompt = f"Respond in the same language as the user's message.\n\nUser: {text}"
         loop = asyncio.get_running_loop()
-        answer = await loop.run_in_executor(None, provider.complete, text)
+        answer = await loop.run_in_executor(None, provider.complete, prompt)
         reply = format_chat_reply(answer)
     else:
-        reply = "⚠️ AI провайдер недоступний."
+        reply = t("ai_unavailable")
     await _reply_with_retry(update, reply)
 
 

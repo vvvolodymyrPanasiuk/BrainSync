@@ -52,8 +52,17 @@ _TITLE = [
 
 
 def _print_banner() -> None:
+    import sys
+    # Switch console to UTF-8 so braille/box-drawing chars render on Windows
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     for brain_line, title_line in zip(_BRAIN, _TITLE):
-        print(brain_line + "   " + title_line)
+        try:
+            print(brain_line + "   " + title_line)
+        except UnicodeEncodeError:
+            print(" " * 30 + "   " + title_line)
     print()
 
 
@@ -291,7 +300,11 @@ def main() -> None:
     _print_banner()
 
     setup_logging(config)
-    logger.info("BrainSync starting — mode=%s provider=%s", config.ai.processing_mode, config.ai.provider)
+
+    from telegram.i18n import set_locale
+    set_locale(config.locale)
+
+    logger.info("BrainSync starting — mode=%s provider=%s locale=%s", config.ai.processing_mode, config.ai.provider, config.locale)
 
     # Build vault index
     from vault_writer.vault.indexer import build_index

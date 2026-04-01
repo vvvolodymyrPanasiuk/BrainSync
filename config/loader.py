@@ -109,6 +109,7 @@ class AppConfig:
     media: MediaConfig = field(default_factory=MediaConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     prefixes: dict[str, list[str]] = field(default_factory=dict)
+    locale: str = "en"               # "en" | "uk" — language for system messages
 
 
 @dataclass
@@ -256,6 +257,7 @@ def load_config(config_path: str) -> AppConfig:
             ),
             top_k_results=int(embedding_raw.get("top_k_results", 5)),
         ),
+        locale=str(raw.get("locale", "en")),
         prefixes=prefixes_raw or {
             "note": ["нотатка:", "note:"],
             "task": ["задача:", "task:", "todo:"],
