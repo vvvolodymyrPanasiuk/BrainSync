@@ -46,6 +46,8 @@ def classify(
         # Strip to JSON — find first { to handle any preamble
         json_start = raw.find("{")
         json_end = raw.rfind("}") + 1
+        if json_start == -1 or json_end == 0 or json_start >= json_end:
+            raise ValueError(f"No JSON object in response: {raw[:200]!r}")
         data = json.loads(raw[json_start:json_end])
         result = ClassificationResult(
             note_type=NoteType(data.get("type", "note")),

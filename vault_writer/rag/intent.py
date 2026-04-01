@@ -78,7 +78,12 @@ def _heuristic_intent(message: str) -> IntentType:
     if _has([
         "що я думав", "що я писав", "як я вирішував", "мої думки",
         "мої нотатки", "у моїх нотатках", "розкажи про мої",
+        "що у мене є", "що є в сховищі", "що є у vault", "що є у сховищі",
+        "покажи мені vault", "покажи vault", "аналіз сховища",
+        "що містить сховище", "що є в моєму", "що в моєму сховищі",
+        "проаналізуй мої", "розкажи що є", "що є у мене",
         "what did i think", "what did i write", "my notes",
+        "what's in my vault", "show my vault", "analyze my notes",
     ]):
         return IntentType.RAG_QUERY
 

@@ -34,14 +34,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     provider = context.bot_data.get("provider")
     vector_store = context.bot_data.get("vector_store")
 
+    from vault_writer.rag.intent import IntentType
+
     # ── Intent classification ─────────────────────────────────────────────────
     if provider is not None and vector_store is not None:
         intent = await _classify_intent_safe(text, provider)
     else:
-        from vault_writer.rag.intent import IntentType
         intent = IntentType.NEW_NOTE
-
-    from vault_writer.rag.intent import IntentType
 
     # ── RAG query ────────────────────────────────────────────────────────────
     if intent == IntentType.RAG_QUERY and vector_store is not None:
