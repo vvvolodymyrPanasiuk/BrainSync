@@ -81,6 +81,10 @@ def format_unsupported_media_types() -> str:
 
 # ── RAG / Semantic Search formatters ─────────────────────────────────────────
 
+def format_chat_reply(answer: str) -> str:
+    return answer
+
+
 def format_rag_answer(answer: str, sources: list[str]) -> str:
     lines = ["💡 На основі твого vault:\n", answer]
     if sources:

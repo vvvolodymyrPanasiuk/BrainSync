@@ -53,6 +53,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _handle_search_query(text, update, context, vector_store, config)
         return
 
+    # ── Chat (casual / general AI question — do not save) ────────────────────
+    if intent == IntentType.CHAT:
+        await _handle_chat(text, update, provider)
+        return
+
     # ── New note (default) ───────────────────────────────────────────────────
     await _handle_new_note(text, update, context, config, vector_store)
 
@@ -107,6 +112,18 @@ async def _handle_search_query(text, update, context, vector_store, config) -> N
         None, search_vault, text, vector_store, config.embedding.top_k_results
     )
     reply = prefix + format_semantic_search_results(results, text)
+    await _reply_with_retry(update, reply)
+
+
+async def _handle_chat(text: str, update, provider) -> None:
+    """Respond to casual chat / general AI questions without saving to vault."""
+    from telegram.formatter import format_chat_reply
+    if provider is not None:
+        loop = asyncio.get_running_loop()
+        answer = await loop.run_in_executor(None, provider.complete, text)
+        reply = format_chat_reply(answer)
+    else:
+        reply = "⚠️ AI провайдер недоступний."
     await _reply_with_retry(update, reply)
 
 

@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import base64
 
-import requests
-
 from vault_writer.ai.provider import AIProvider
 
 
@@ -20,6 +18,7 @@ class OllamaProvider(AIProvider):
         self._vision_model = vision_model
 
     def complete(self, prompt: str, max_tokens: int = 1000) -> str:
+        import requests
         response = requests.post(
             f"{self._base_url}/api/chat",
             json={
@@ -42,6 +41,7 @@ class OllamaProvider(AIProvider):
     ) -> str:
         if not self._vision_model:
             raise NotImplementedError("ollama_vision_model not configured")
+        import requests
         b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
         response = requests.post(
             f"{self._base_url}/api/chat",
