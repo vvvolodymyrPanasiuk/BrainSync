@@ -9,6 +9,19 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Characters forbidden in Windows filenames
+_WIN_FORBIDDEN = str.maketrans({c: "" for c in r'\/:*?"<>|'})
+
+
+def _sanitize_filename(title: str, max_len: int = 80) -> str:
+    """Remove Windows-forbidden characters and trim to max_len."""
+    clean = title.translate(_WIN_FORBIDDEN).strip()
+    # Collapse multiple spaces/dots
+    while "  " in clean:
+        clean = clean.replace("  ", " ")
+    clean = clean.strip(". ")
+    return clean[:max_len] if clean else "note"
+
 
 class NoteType(str, Enum):
     NOTE    = "note"
@@ -70,7 +83,8 @@ def write_note(note: VaultNote, vault_path: str) -> str:
         _assert_within_vault(folder, vault, note.folder)
         create_folder_if_missing(folder)
         note.note_number = next_note_number(folder)
-        filename = f"{note.note_number:04d} {note.title}.md"
+        safe_title = _sanitize_filename(note.title)
+        filename = f"{note.note_number:04d} {safe_title}.md"
         note.file_path = f"{note.folder}/{filename}"
         full_path = folder / filename
         _assert_within_vault(full_path, vault, note.file_path)

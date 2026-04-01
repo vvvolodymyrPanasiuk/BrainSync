@@ -63,17 +63,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def _classify_intent_safe(text: str, provider) -> object:
-    """Classify intent in executor; returns NEW_NOTE on any error."""
-    global _INTENT_WARN_ISSUED
-    from vault_writer.rag.intent import IntentType, classify_intent
+    """Classify intent in executor; falls back to heuristic on any error."""
+    from vault_writer.rag.intent import IntentType, classify_intent, _heuristic_intent
     try:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, classify_intent, text, provider)
-    except (RuntimeError, ImportError) as exc:
-        if not _INTENT_WARN_ISSUED:
-            logger.warning("Intent classification unavailable (%s) — defaulting to new_note", exc)
-            _INTENT_WARN_ISSUED = True
-        return IntentType.NEW_NOTE
+    except (RuntimeError, ImportError):
+        return _heuristic_intent(text)
 
 
 async def _handle_rag_query(text, update, context, vector_store, provider, config) -> None:
@@ -174,9 +170,10 @@ async def _run_create_note(
 
 async def _reply_with_retry(update: Update, text: str, max_attempts: int = 3) -> None:
     """Send reply with exponential backoff on RetryAfter errors."""
+    from telegram.constants import ParseMode
     for attempt in range(max_attempts):
         try:
-            await update.message.reply_text(text)
+            await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
             return
         except RetryAfter as exc:
             wait = exc.retry_after if attempt < max_attempts - 1 else None

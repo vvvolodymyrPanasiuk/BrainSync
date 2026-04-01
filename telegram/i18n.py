@@ -7,7 +7,7 @@ STRINGS: dict[str, dict[str, str]] = {
     "en": {
         "bot_online":         "🟢 BrainSync online — ready.",
         "bot_offline":        "🔴 BrainSync offline — bot stopped.",
-        "saved":              "✓ Saved → {file_path}",
+        "saved":              "✓ Saved → `{file_path}`",
         "ai_fallback":        "⚠️ AI unavailable (rate limit). Note saved in minimal mode.\n→ {file_path}",
         "voice_too_long":     "⚠️ Voice message too long. Maximum: {max_seconds} seconds.",
         "media_error":        "❌ Media processing error. Please try again.",
@@ -36,7 +36,7 @@ STRINGS: dict[str, dict[str, str]] = {
     "uk": {
         "bot_online":         "🟢 BrainSync online — готовий до роботи.",
         "bot_offline":        "🔴 BrainSync offline — бот зупинено.",
-        "saved":              "✓ Збережено → {file_path}",
+        "saved":              "✓ Збережено → `{file_path}`",
         "ai_fallback":        "⚠️ AI недоступний (rate limit). Нотатку збережено у minimal режимі.\n→ {file_path}",
         "voice_too_long":     "⚠️ Голосове повідомлення надто довге. Максимум: {max_seconds} секунд.",
         "media_error":        "❌ Помилка обробки медіа. Спробуйте ще раз.",
