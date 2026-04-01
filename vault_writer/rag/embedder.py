@@ -4,8 +4,6 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 
-import requests
-
 logger = logging.getLogger(__name__)
 
 
@@ -39,6 +37,7 @@ class OllamaEmbedder(EmbeddingProvider):
         self._model = model
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        import requests
         results = []
         for text in texts:
             resp = requests.post(

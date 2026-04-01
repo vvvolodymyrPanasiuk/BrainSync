@@ -8,3 +8,4 @@ faster-whisper
 pypdf
 chromadb
 sentence-transformers
+requests
