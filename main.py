@@ -1,12 +1,14 @@
-"""BrainSync entry point: load config → build vault index → start Telegram bot.
+"""BrainSync dashboard — manages the bot subprocess.
 
-NOTE: The VaultWriter MCP server (vault_writer/server.py) is a SEPARATE process.
-It is started by external callers (e.g. Claude Code via mcp_servers.json).
-MCP stdio transport owns stdin/stdout — incompatible with PTB run_polling() in the same process.
+The bot itself runs in bot_runner.py (separate console window).
+The VaultWriter MCP server (vault_writer/server.py) is also a separate process.
 """
 from __future__ import annotations
 
 import logging
+import os
+import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -52,8 +54,6 @@ _TITLE = [
 
 
 def _print_banner() -> None:
-    import sys
-    # Switch console to UTF-8 so braille/box-drawing chars render on Windows
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
@@ -66,83 +66,30 @@ def _print_banner() -> None:
     print()
 
 
-async def _ensure_infrastructure_ready(app) -> None:
-    """Post-init hook: ensure Whisper model is cached; blocks until download completes."""
-    import telegram.handlers.media as _media_mod
+# ── Bot subprocess management ─────────────────────────────────────────────────
 
-    config = app.bot_data["config"]
-    model_size = config.media.transcription_model
-    allowed_ids = config.telegram.allowed_user_ids
-
-    # Check if model already cached (huggingface hub directory)
-    cache_root = Path.home() / ".cache" / "huggingface" / "hub"
-    model_cached = any(
-        p.is_dir()
-        for p in cache_root.glob("*")
-        if model_size in p.name
-    ) if cache_root.exists() else False
-
-    if not model_cached and allowed_ids:
-        logger.info("Whisper model '%s' not found — downloading…", model_size)
-        try:
-            from telegram.formatter import format_model_downloading
-            await app.bot.send_message(chat_id=allowed_ids[0], text=format_model_downloading())
-        except Exception as exc:
-            logger.warning("Could not send download notification: %s", exc)
-
-    # Instantiate Transcriber (triggers model download if not cached — blocking I/O)
-    from vault_writer.ai.transcriber import Transcriber
-    import asyncio as _asyncio
-    transcriber = Transcriber(model_size=model_size)
-    loop = _asyncio.get_running_loop()
-    await loop.run_in_executor(None, transcriber._load)  # offload blocking download
-
-    app.bot_data["transcriber"] = transcriber
-    _media_mod._READY = True
-    logger.info("Whisper model ready: %s", model_size)
-
-    if allowed_ids:
-        try:
-            from telegram.formatter import format_model_ready
-            await app.bot.send_message(chat_id=allowed_ids[0], text=format_model_ready())
-        except Exception as exc:
-            logger.warning("Could not send ready notification: %s", exc)
-
-    # Start background vault indexing (non-blocking)
-    vector_store = app.bot_data.get("vector_store")
-    if vector_store is not None:
-        import threading
-        def _build_index_background():
-            try:
-                count = vector_store.build_from_vault(config.vault.path, config.embedding)
-                logger.info("Background vault indexing complete: %d notes", count)
-            except Exception as exc:
-                logger.warning("Background vault indexing failed: %s", exc)
-        t = threading.Thread(target=_build_index_background, daemon=True, name="vault-indexer")
-        t.start()
-        logger.info("Background vault indexing started")
-
-    # Notify all allowed users that the bot is online
-    if allowed_ids:
-        from telegram.formatter import format_bot_online
-        for uid in allowed_ids:
-            try:
-                await app.bot.send_message(chat_id=uid, text=format_bot_online())
-            except Exception as exc:
-                logger.warning("Could not send online notification to %s: %s", uid, exc)
+def _start_bot() -> subprocess.Popen:
+    """Launch bot_runner.py in a new console window."""
+    cmd = ["uv", "run", "python", "bot_runner.py"]
+    flags = 0
+    if sys.platform == "win32":
+        flags = subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP
+    return subprocess.Popen(cmd, creationflags=flags)
 
 
-async def _notify_shutdown(app) -> None:
-    """post_shutdown hook: tell all allowed users the bot is going offline."""
-    config = app.bot_data.get("config")
-    if config is None:
-        return
-    from telegram.formatter import format_bot_offline
-    for uid in config.telegram.allowed_user_ids:
-        try:
-            await app.bot.send_message(chat_id=uid, text=format_bot_offline())
-        except Exception as exc:
-            logger.warning("Could not send offline notification to %s: %s", uid, exc)
+def _stop_bot(proc: subprocess.Popen) -> None:
+    """Gracefully stop the bot subprocess (CTRL_BREAK → terminate → kill)."""
+    if proc.poll() is not None:
+        return  # already exited
+    try:
+        if sys.platform == "win32":
+            proc.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            proc.terminate()
+        proc.wait(timeout=8)
+    except (subprocess.TimeoutExpired, OSError):
+        proc.kill()
+        proc.wait()
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -152,13 +99,14 @@ def _hr(char: str = "─", width: int = 56) -> None:
 
 
 def _dashboard(config) -> str:
-    """Show status screen. Returns 'start' | 'edit' | 'details' | 'setup' | 'exit'."""
-    import os
+    """Dashboard loop. Manages bot subprocess. Returns 'setup' or 'exit'."""
+    bot_proc: subprocess.Popen | None = None
 
     while True:
-        # Clear screen
         os.system("cls" if sys.platform == "win32" else "clear")
         _print_banner()
+
+        bot_running = bot_proc is not None and bot_proc.poll() is None
 
         _hr("═")
         print("  Current configuration")
@@ -170,10 +118,21 @@ def _dashboard(config) -> str:
         print(f"  Embeddings     {config.embedding.backend}  ({config.embedding.model})")
         print(f"  Telegram       {len(config.telegram.allowed_user_ids)} allowed user(s)")
         print(f"  Git sync       {'enabled' if config.git.enabled else 'disabled'}")
+        print(f"  Locale         {config.locale}")
         print()
+
+        status_line = "  Status:  🟢 Bot is running" if bot_running else "  Status:  ⚫ Bot is stopped"
+        try:
+            print(status_line)
+        except UnicodeEncodeError:
+            print("  Status:  [running]" if bot_running else "  Status:  [stopped]")
+
         _hr()
         print()
-        print("  [1]  Start bot")
+        if bot_running:
+            print("  [1]  Stop bot")
+        else:
+            print("  [1]  Start bot")
         print("  [2]  Edit config  (opens config.yaml)")
         print("  [3]  Full config details")
         print("  [4]  Re-run setup wizard")
@@ -182,29 +141,49 @@ def _dashboard(config) -> str:
         _hr()
 
         choice = input("  Choose [1-5]: ").strip()
+
         if choice == "1":
-            return "start"
-        if choice == "2":
+            if bot_running:
+                print("\n  Stopping bot…")
+                _stop_bot(bot_proc)
+                bot_proc = None
+                print("  Bot stopped.")
+                input("  Press Enter to continue…")
+            else:
+                bot_proc = _start_bot()
+                print("\n  Bot started in a new window.")
+                input("  Press Enter to continue…")
+
+        elif choice == "2":
             _edit_config()
-            # reload config after edit
             from config.loader import load_config
             try:
                 config.__dict__.update(load_config("config.yaml").__dict__)
-                print("\n  ✓ Config reloaded.")
+                print("\n  Config reloaded.")
                 input("  Press Enter to continue…")
             except Exception as exc:
-                print(f"\n  ❌ Config error: {exc}")
+                print(f"\n  Config error: {exc}")
                 input("  Fix config.yaml and press Enter…")
+
         elif choice == "3":
             _show_full_config(config)
+
         elif choice == "4":
+            if bot_running:
+                print("\n  Stopping bot before setup…")
+                _stop_bot(bot_proc)
+                bot_proc = None
             return "setup"
+
         elif choice == "5":
+            if bot_running:
+                print("\n  Stopping bot…")
+                _stop_bot(bot_proc)
+                bot_proc = None
             return "exit"
 
 
 def _edit_config() -> None:
-    import subprocess, os
     cfg = Path("config.yaml")
     if sys.platform == "win32":
         os.startfile(str(cfg))
@@ -217,13 +196,11 @@ def _edit_config() -> None:
 
 
 def _show_full_config(config) -> None:
-    import os
     os.system("cls" if sys.platform == "win32" else "clear")
     _hr("═")
     print("  Full configuration")
     _hr("═")
     print()
-    # AI
     print("  ── AI ──────────────────────────────────────────")
     print(f"  provider          {config.ai.provider}")
     print(f"  model             {config.ai.model}")
@@ -233,12 +210,10 @@ def _show_full_config(config) -> None:
     print(f"  max_context_tok   {config.ai.max_context_tokens}")
     print(f"  api_key           {'***' + config.ai.api_key[-6:] if config.ai.api_key else '(not set)'}")
     print()
-    # Vault
     print("  ── Vault ───────────────────────────────────────")
     print(f"  path              {config.vault.path}")
     print(f"  language          {config.vault.language}")
     print()
-    # Embeddings
     print("  ── Embeddings / RAG ────────────────────────────")
     print(f"  backend           {config.embedding.backend}")
     print(f"  model             {config.embedding.model}")
@@ -247,22 +222,22 @@ def _show_full_config(config) -> None:
     print(f"  dup threshold     {config.embedding.similarity_duplicate_threshold}")
     print(f"  related threshold {config.embedding.similarity_related_threshold}")
     print()
-    # Media
     print("  ── Media ───────────────────────────────────────")
     print(f"  voice max         {config.media.max_voice_duration_seconds}s")
     print(f"  whisper model     {config.media.transcription_model}")
     print(f"  pdf max pages     {config.media.pdf_max_pages}")
     print(f"  max file size     {config.media.max_file_size_mb} MB")
     print()
-    # Telegram
     print("  ── Telegram ────────────────────────────────────")
     print(f"  allowed_user_ids  {config.telegram.allowed_user_ids}")
     print()
-    # Git
     print("  ── Git sync ────────────────────────────────────")
     print(f"  enabled           {config.git.enabled}")
     print(f"  push_remote       {config.git.push_remote}")
     print(f"  push_interval     {config.git.push_interval_minutes} min")
+    print()
+    print("  ── Localisation ────────────────────────────────")
+    print(f"  locale            {config.locale}")
     print()
     _hr()
     input("  Press Enter to go back…")
@@ -276,72 +251,25 @@ def main() -> None:
     if not Path(config_path).exists():
         _print_banner()
         print("  config.yaml not found — starting setup wizard.\n")
-        import subprocess
         subprocess.run([sys.executable, "setup.py"])
         if not Path(config_path).exists():
             print("Setup did not complete. Exiting.")
             sys.exit(1)
 
-    from config.loader import SessionStats, get_ai_provider, get_embedding_provider, load_config, setup_logging
+    from config.loader import load_config, setup_logging
     config = load_config(config_path)
-
-    # Dashboard loop
-    action = _dashboard(config)
-    if action == "exit":
-        sys.exit(0)
-    if action == "setup":
-        import subprocess
-        subprocess.run([sys.executable, "setup.py"])
-        config = load_config(config_path)
-
-    # ── Bot startup ───────────────────────────────────────────────────────────
-    import os
-    os.system("cls" if sys.platform == "win32" else "clear")
-    _print_banner()
-
     setup_logging(config)
 
-    from telegram.i18n import set_locale
-    set_locale(config.locale)
+    action = _dashboard(config)
 
-    logger.info("BrainSync starting — mode=%s provider=%s locale=%s", config.ai.processing_mode, config.ai.provider, config.locale)
+    if action == "setup":
+        subprocess.run([sys.executable, "setup.py"])
+        # Re-enter dashboard with fresh config
+        config = load_config(config_path)
+        main()
+        return
 
-    # Build vault index
-    from vault_writer.vault.indexer import build_index
-    index = build_index(config.vault.path)
-    logger.info("Vault index built: %d notes, %d topics", index.total_notes, len(index.topics))
-
-    # Init session stats
-    stats = SessionStats(vault_notes_total=index.total_notes)
-
-    # Init AI provider
-    try:
-        provider = get_ai_provider(config)
-        logger.info("AI provider ready: %s", config.ai.provider)
-    except Exception as exc:
-        logger.warning("AI provider init failed: %s — running in minimal mode", exc)
-        provider = None
-
-    # Init embedding provider + vector store
-    from vault_writer.rag.vector_store import VectorStore
-    try:
-        embedder = get_embedding_provider(config)
-        vector_store = VectorStore(config.embedding.index_path, embedder)
-        logger.info("VectorStore initialised at %s", config.embedding.index_path)
-    except Exception as exc:
-        logger.warning("VectorStore init failed: %s — RAG features disabled", exc)
-        vector_store = None
-
-    # Start Telegram bot (blocking)
-    from telegram.bot import build_application
-    app = build_application(config, index, stats, provider, vector_store=vector_store)
-    app.post_init = _ensure_infrastructure_ready
-    app.post_shutdown = _notify_shutdown
-
-    logger.info("Telegram bot starting — allowed_users=%s", config.telegram.allowed_user_ids)
-    print(f"  Bot is running. Press Ctrl+C to stop.\n")
-    _hr()
-    app.run_polling(drop_pending_updates=True)
+    sys.exit(0)
 
 
 if __name__ == "__main__":
