@@ -125,6 +125,14 @@ def format_similarity_notice(notices: list) -> str:
     return "\n".join(lines)
 
 
+def format_bot_online() -> str:
+    return "🟢 BrainSync online — готовий до роботи."
+
+
+def format_bot_offline() -> str:
+    return "🔴 BrainSync offline — бот зупинено."
+
+
 def format_reindex_start() -> str:
     return "⏳ Переіндексація vault…"
 

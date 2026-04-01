@@ -113,6 +113,28 @@ async def _ensure_infrastructure_ready(app) -> None:
         t.start()
         logger.info("Background vault indexing started")
 
+    # Notify all allowed users that the bot is online
+    if allowed_ids:
+        from telegram.formatter import format_bot_online
+        for uid in allowed_ids:
+            try:
+                await app.bot.send_message(chat_id=uid, text=format_bot_online())
+            except Exception as exc:
+                logger.warning("Could not send online notification to %s: %s", uid, exc)
+
+
+async def _notify_shutdown(app) -> None:
+    """post_shutdown hook: tell all allowed users the bot is going offline."""
+    config = app.bot_data.get("config")
+    if config is None:
+        return
+    from telegram.formatter import format_bot_offline
+    for uid in config.telegram.allowed_user_ids:
+        try:
+            await app.bot.send_message(chat_id=uid, text=format_bot_offline())
+        except Exception as exc:
+            logger.warning("Could not send offline notification to %s: %s", uid, exc)
+
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
@@ -301,6 +323,7 @@ def main() -> None:
     from telegram.bot import build_application
     app = build_application(config, index, stats, provider, vector_store=vector_store)
     app.post_init = _ensure_infrastructure_ready
+    app.post_shutdown = _notify_shutdown
 
     logger.info("Telegram bot starting — allowed_users=%s", config.telegram.allowed_user_ids)
     print(f"  Bot is running. Press Ctrl+C to stop.\n")
