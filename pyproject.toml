@@ -9,6 +9,11 @@ dependencies = [
     "mcp",
     "pyyaml",
     "gitpython",
+    "requests",
+    "faster-whisper",
+    "pypdf",
+    "chromadb",
+    "sentence-transformers",
 ]
 
 [dependency-groups]
