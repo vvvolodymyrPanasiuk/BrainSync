@@ -54,15 +54,18 @@ class OllamaProvider(AIProvider):
                 timeout=(_CONNECT_TIMEOUT, _WARMUP_TIMEOUT),
             )
             if response.status_code == 500:
+                try:
+                    err_body = response.json().get("error", response.text[:300])
+                except Exception:
+                    err_body = response.text[:300]
                 available = self.list_models()
                 hint = (
                     f"Available models: {', '.join(available)}"
                     if available else "No models found — run: ollama pull <model>"
                 )
+                logger.error("Ollama 500 detail: %s", err_body)
                 raise RuntimeError(
-                    f"Ollama returned 500 for model '{self._model}' — model not found or failed to load.\n"
-                    f"{hint}\n"
-                    f"Fix: set ai.model in config.yaml to one of the available models."
+                    f"Ollama 500 for model '{self._model}': {err_body}\n{hint}"
                 )
             response.raise_for_status()
             logger.info("Ollama warmup complete — model '%s' is ready", self._model)
@@ -94,15 +97,12 @@ class OllamaProvider(AIProvider):
                 timeout=timeout,
             )
             if response.status_code == 500:
-                available = self.list_models()
-                hint = (
-                    f"Available models: {', '.join(available)}"
-                    if available else "No models found — run: ollama pull <model>"
-                )
-                raise RuntimeError(
-                    f"Ollama 500 for model '{self._model}' — model not found.\n"
-                    f"{hint}"
-                )
+                try:
+                    err_body = response.json().get("error", response.text[:300])
+                except Exception:
+                    err_body = response.text[:300]
+                logger.error("Ollama 500 detail: %s", err_body)
+                raise RuntimeError(f"Ollama 500 for model '{self._model}': {err_body}")
             response.raise_for_status()
             return response.json()["message"]["content"]
         except requests.exceptions.ConnectionError as exc:
