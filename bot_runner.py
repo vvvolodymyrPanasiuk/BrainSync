@@ -121,26 +121,42 @@ async def _ensure_infrastructure_ready(app) -> None:
     # AI warmup — load model into memory before declaring ready
     provider = app.bot_data.get("provider")
     if provider is not None and config.ai.provider == "ollama":
+        logger.info(
+            "AI warmup starting — provider=%s model=%s url=%s",
+            config.ai.provider, config.ai.model, config.ai.ollama_url,
+        )
         if allowed_ids:
             try:
                 await app.bot.send_message(
                     chat_id=allowed_ids[0],
-                    text="⏳ Loading AI model into memory… (cold start, please wait)",
+                    text=f"⏳ Loading AI model `{config.ai.model}` into memory… (cold start, please wait)",
                 )
             except Exception:
                 pass
-        logger.info("AI warmup starting for provider=%s model=%s", config.ai.provider, config.ai.model)
         try:
             await loop.run_in_executor(None, provider.warmup)
-            logger.info("AI warmup complete")
+            logger.info("AI warmup complete — model '%s' is ready", config.ai.model)
         except Exception as exc:
-            logger.warning("AI warmup failed: %s — bot will still start, first request may be slow", exc)
+            logger.error("AI warmup failed: %s", exc)
             if allowed_ids:
+                # Show available models so user knows what to put in config.yaml
+                available = []
                 try:
-                    await app.bot.send_message(
-                        chat_id=allowed_ids[0],
-                        text=f"⚠️ AI warmup failed: {exc}\nBot started but first response may be slow.",
-                    )
+                    available = await loop.run_in_executor(None, provider.list_models)
+                except Exception:
+                    pass
+                hint = (
+                    f"Available models: `{'`, `'.join(available)}`"
+                    if available else "Run `ollama list` to see available models."
+                )
+                msg = (
+                    f"❌ AI warmup failed for model `{config.ai.model}`:\n"
+                    f"`{exc}`\n\n"
+                    f"{hint}\n\n"
+                    f"Fix: set `ai.model` in `config.yaml` to a valid model name."
+                )
+                try:
+                    await app.bot.send_message(chat_id=allowed_ids[0], text=msg)
                 except Exception:
                     pass
 

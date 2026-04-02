@@ -26,10 +26,20 @@ class OllamaProvider(AIProvider):
         self._vision_model = vision_model
         self._timeout = timeout  # configurable via config.yaml ai.ollama_timeout
 
+    def list_models(self) -> list[str]:
+        """Return list of model names available in Ollama."""
+        import requests
+        try:
+            resp = requests.get(f"{self._base_url}/api/tags", timeout=(_CONNECT_TIMEOUT, 10))
+            resp.raise_for_status()
+            return [m["name"] for m in resp.json().get("models", [])]
+        except Exception:
+            return []
+
     def warmup(self) -> None:
         """Send a minimal request to force model load into VRAM/RAM.
         Blocks until the model is ready. Uses _WARMUP_TIMEOUT (15 min).
-        Raises RuntimeError if Ollama is unreachable or times out."""
+        Raises RuntimeError if Ollama is unreachable, model missing, or times out."""
         import requests
         logger.info("Ollama warmup: loading model '%s' into memory…", self._model)
         try:
@@ -43,6 +53,17 @@ class OllamaProvider(AIProvider):
                 },
                 timeout=(_CONNECT_TIMEOUT, _WARMUP_TIMEOUT),
             )
+            if response.status_code == 500:
+                available = self.list_models()
+                hint = (
+                    f"Available models: {', '.join(available)}"
+                    if available else "No models found — run: ollama pull <model>"
+                )
+                raise RuntimeError(
+                    f"Ollama returned 500 for model '{self._model}' — model not found or failed to load.\n"
+                    f"{hint}\n"
+                    f"Fix: set ai.model in config.yaml to one of the available models."
+                )
             response.raise_for_status()
             logger.info("Ollama warmup complete — model '%s' is ready", self._model)
         except requests.exceptions.ConnectionError as exc:
@@ -72,6 +93,16 @@ class OllamaProvider(AIProvider):
                 },
                 timeout=timeout,
             )
+            if response.status_code == 500:
+                available = self.list_models()
+                hint = (
+                    f"Available models: {', '.join(available)}"
+                    if available else "No models found — run: ollama pull <model>"
+                )
+                raise RuntimeError(
+                    f"Ollama 500 for model '{self._model}' — model not found.\n"
+                    f"{hint}"
+                )
             response.raise_for_status()
             return response.json()["message"]["content"]
         except requests.exceptions.ConnectionError as exc:
