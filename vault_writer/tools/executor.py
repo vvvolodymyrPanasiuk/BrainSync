@@ -8,6 +8,9 @@ from vault_writer.ai.router import ActionPlan, Intent
 
 logger = logging.getLogger(__name__)
 
+# Key used in context.user_data to track pending clarification
+_CLARIFY_KEY = "pending_clarification"
+
 
 async def execute(
     plan: ActionPlan,
@@ -24,6 +27,17 @@ async def execute(
     intent = plan.intent
     logger.debug("executor: dispatching intent=%s", intent.value)
 
+    # ── Check if user is answering a pending clarification ────────────────────
+    pending = context.user_data.get(_CLARIFY_KEY) if context.user_data is not None else None
+    if pending and intent not in (Intent.REQUEST_CLARIFICATION, Intent.IGNORE_SPAM):
+        # User replied to our clarification question — re-route with full context
+        clarified_message = f"{pending['question']}\nUser reply: {message}"
+        logger.info("executor: resolving clarification with reply=%r", message[:80])
+        context.user_data.pop(_CLARIFY_KEY, None)
+        # Re-route the combined clarification context
+        plan = await _re_route(clarified_message, provider, index)
+        intent = plan.intent
+
     if intent == Intent.ANSWER_FROM_VAULT:
         return await _answer_from_vault(message, vector_store, provider, config)
 
@@ -39,20 +53,27 @@ async def execute(
     if intent == Intent.CHAT_ONLY:
         return await _chat(message, provider)
 
+    if intent == Intent.SEARCH_WEB:
+        return await _search_web(message, provider)
+
     if intent == Intent.REQUEST_CLARIFICATION:
-        return await _clarify(message, plan, provider)
+        return await _clarify(message, plan, provider, context)
 
     if intent in (Intent.IGNORE_SPAM, Intent.MANUAL_REVIEW):
         logger.info("executor: intent=%s — no reply", intent.value)
         return ""
 
-    # Save-type intents
-    if intent in (
-        Intent.CREATE_NOTE, Intent.APPEND_NOTE, Intent.UPDATE_NOTE,
-        Intent.EXTRACT_STRUCTURED, Intent.PARSE_DOCUMENT,
-    ):
+    if intent == Intent.APPEND_NOTE:
+        return await _append_note(message, plan, config, index, stats, provider, vector_store)
+
+    if intent == Intent.UPDATE_NOTE:
+        return await _update_note(message, plan, config, index, stats, provider, vector_store)
+
+    # Save-type intents: CREATE_NOTE, EXTRACT_STRUCTURED, PARSE_DOCUMENT
+    if intent in (Intent.CREATE_NOTE, Intent.EXTRACT_STRUCTURED, Intent.PARSE_DOCUMENT):
         return await _save_note(message, plan, config, index, stats, provider, vector_store)
 
+    # Fallback
     logger.warning("executor: unhandled intent %s — treating as create_note", intent.value)
     return await _save_note(message, plan, config, index, stats, provider, vector_store)
 
@@ -61,7 +82,7 @@ async def execute(
 
 async def _answer_from_vault(message: str, vector_store, provider, config) -> str:
     from vault_writer.rag.engine import answer_query
-    from telegram.formatter import format_rag_answer, format_rag_not_found, format_index_building_notice
+    from telegram.formatter import format_rag_answer, format_rag_not_found
 
     prefix = _building_prefix(vector_store)
     if vector_store is None:
@@ -78,13 +99,11 @@ async def _answer_from_vault(message: str, vector_store, provider, config) -> st
 
 
 async def _analyze_vault(message: str, provider, index) -> str:
-    """Broad vault analysis: topics, counts, structure."""
-    from telegram.formatter import format_index_building_notice
-
+    """Broad vault analysis: summarise topics and note counts."""
     topic_counts: dict[str, int] = {}
     for note in index.notes.values():
         parts = note.folder.split("/") if note.folder else ["General"]
-        top = parts[0]
+        top = parts[0] or "General"
         topic_counts[top] = topic_counts.get(top, 0) + 1
 
     vault_summary = f"Total notes: {index.total_notes}\nTopics:\n"
@@ -95,7 +114,8 @@ async def _analyze_vault(message: str, provider, index) -> str:
         prompt = (
             f"The user asks: {message}\n\n"
             f"Here is their vault structure:\n{vault_summary}\n"
-            "Answer helpfully in the same language as the user's message."
+            "Answer helpfully in the same language as the user's message. "
+            "Be specific about what topics exist and how many notes are in each."
         )
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, provider.complete, prompt)
@@ -105,7 +125,7 @@ async def _analyze_vault(message: str, provider, index) -> str:
 
 async def _search_vault(message: str, vector_store, config) -> str:
     from vault_writer.rag.engine import search_vault
-    from telegram.formatter import format_semantic_search_results, format_index_building_notice
+    from telegram.formatter import format_semantic_search_results
 
     prefix = _building_prefix(vector_store)
     if vector_store is None:
@@ -129,15 +149,224 @@ async def _chat(message: str, provider) -> str:
     return format_chat_reply(answer)
 
 
-async def _clarify(message: str, plan: ActionPlan, provider) -> str:
+async def _search_web(message: str, provider) -> str:
+    """Search via DuckDuckGo API (no key required), synthesise with AI."""
+    try:
+        loop = asyncio.get_running_loop()
+        snippets = await loop.run_in_executor(None, _ddg_search, message)
+    except Exception as exc:
+        logger.warning("web search failed: %s", exc)
+        snippets = []
+
+    if not snippets:
+        if provider is not None:
+            prompt = (
+                f"Answer the following question from your own knowledge. "
+                f"Note that web search was attempted but returned no results.\n\n{message}"
+            )
+            loop = asyncio.get_running_loop()
+            answer = await loop.run_in_executor(None, provider.complete, prompt)
+            return f"🌐 (web search unavailable)\n\n{answer}"
+        return "🌐 Web search unavailable and no AI provider configured."
+
+    context_text = "\n\n".join(
+        f"[{i+1}] {s['title']}\n{s['snippet']}\nSource: {s['url']}"
+        for i, s in enumerate(snippets[:5])
+    )
+
+    if provider is not None:
+        prompt = (
+            f"Answer the user's question based on the following web search results. "
+            f"Cite sources with [N]. Mark every fact from web as (source: web).\n\n"
+            f"Question: {message}\n\nSearch results:\n{context_text}\n\n"
+            f"Answer in the same language as the question."
+        )
+        loop = asyncio.get_running_loop()
+        answer = await loop.run_in_executor(None, provider.complete, prompt)
+        return f"🌐 *Web search result:*\n\n{answer}"
+
+    # No AI — return raw snippets
+    lines = ["🌐 *Web search results:*\n"]
+    for i, s in enumerate(snippets[:5], 1):
+        lines.append(f"*{i}. {s['title']}*\n{s['snippet']}\n_{s['url']}_\n")
+    return "\n".join(lines)
+
+
+def _ddg_search(query: str, max_results: int = 5) -> list[dict]:
+    """DuckDuckGo Instant Answer API — no API key required."""
+    import json
+    import urllib.parse
+    import urllib.request
+
+    url = (
+        "https://api.duckduckgo.com/?q="
+        + urllib.parse.quote_plus(query)
+        + "&format=json&no_html=1&skip_disambig=1"
+    )
+    req = urllib.request.Request(url, headers={"User-Agent": "BrainSync/1.0"})
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    results: list[dict] = []
+
+    # Abstract (featured snippet)
+    if data.get("AbstractText"):
+        results.append({
+            "title": data.get("Heading", "DuckDuckGo"),
+            "snippet": data["AbstractText"],
+            "url": data.get("AbstractURL", "https://duckduckgo.com"),
+        })
+
+    # Related topics
+    for item in data.get("RelatedTopics", []):
+        if len(results) >= max_results:
+            break
+        if "Text" in item and "FirstURL" in item:
+            results.append({
+                "title": item.get("Text", "")[:80],
+                "snippet": item.get("Text", ""),
+                "url": item["FirstURL"],
+            })
+
+    return results
+
+
+async def _clarify(message: str, plan: ActionPlan, provider, context) -> str:
+    """Ask a clarifying question and store original message for next turn."""
     if provider is None:
         return "Could you clarify what you mean? / Уточніть, будь ласка."
+
     prompt = (
-        f"The user sent an ambiguous message. Ask a brief, friendly clarifying question "
-        f"in the same language.\nMessage: {message}\nReason: {plan.reason}"
+        "The user sent an ambiguous message. Ask ONE brief, friendly clarifying question "
+        "in the same language as the user's message. Be specific.\n"
+        f"Message: {message}\nReason it is ambiguous: {plan.reason}"
     )
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, provider.complete, prompt)
+    question = await loop.run_in_executor(None, provider.complete, prompt)
+
+    # Persist so next message is treated as clarification answer
+    if context is not None and context.user_data is not None:
+        context.user_data[_CLARIFY_KEY] = {
+            "original": message,
+            "question": question,
+        }
+        logger.info("executor: clarification pending, stored for next turn")
+
+    return question
+
+
+async def _append_note(
+    message: str, plan: ActionPlan, config, index, stats, provider, vector_store
+) -> str:
+    """Find best matching note and append content to it."""
+    from pathlib import Path
+    from telegram.formatter import format_confirmation
+
+    # Find candidate note via vector search or topic match
+    target_path = await _find_target_note(plan, message, vector_store, index, config)
+
+    if target_path is None:
+        # No matching note found — create new instead
+        logger.info("executor: append_note — no target found, creating new note")
+        return await _save_note(message, plan, config, index, stats, provider, vector_store)
+
+    vault = Path(config.vault.path)
+    full_path = vault / target_path
+
+    if not full_path.exists():
+        logger.warning("executor: append target %s not found on disk", target_path)
+        return await _save_note(message, plan, config, index, stats, provider, vector_store)
+
+    try:
+        existing = full_path.read_text(encoding="utf-8")
+
+        # Format the new content to append
+        if provider is not None:
+            loop = asyncio.get_running_loop()
+            append_text = await loop.run_in_executor(
+                None, provider.complete,
+                f"Format this content as a clean markdown addition to an existing note.\n"
+                f"Just return the formatted content, no explanation.\n\n{message}",
+            )
+        else:
+            append_text = message
+
+        separator = "\n\n---\n\n" if not existing.rstrip().endswith("---") else "\n\n"
+        updated = existing.rstrip() + separator + append_text.strip() + "\n"
+        full_path.write_text(updated, encoding="utf-8")
+
+        if vector_store is not None:
+            try:
+                vector_store.upsert_note(target_path, updated)
+            except Exception as exc:
+                logger.warning("vector upsert after append: %s", exc)
+
+        logger.info("executor: appended to %s", target_path)
+        return f"✏️ Appended to `{target_path}`"
+    except Exception as exc:
+        logger.error("executor: append_note failed: %s", exc)
+        return f"❌ Could not append: {exc}"
+
+
+async def _update_note(
+    message: str, plan: ActionPlan, config, index, stats, provider, vector_store
+) -> str:
+    """Find best matching note and rewrite its content body."""
+    from pathlib import Path
+
+    target_path = await _find_target_note(plan, message, vector_store, index, config)
+
+    if target_path is None:
+        logger.info("executor: update_note — no target found, creating new note")
+        return await _save_note(message, plan, config, index, stats, provider, vector_store)
+
+    vault = Path(config.vault.path)
+    full_path = vault / target_path
+
+    if not full_path.exists():
+        return await _save_note(message, plan, config, index, stats, provider, vector_store)
+
+    try:
+        existing = full_path.read_text(encoding="utf-8")
+
+        # Preserve frontmatter, replace body
+        if existing.startswith("---"):
+            end = existing.find("---", 3)
+            if end != -1:
+                frontmatter = existing[: end + 3]
+                old_body = existing[end + 3:]
+            else:
+                frontmatter = ""
+                old_body = existing
+        else:
+            frontmatter = ""
+            old_body = existing
+
+        if provider is not None:
+            loop = asyncio.get_running_loop()
+            new_body = await loop.run_in_executor(
+                None, provider.complete,
+                f"Update the following note body with new information. "
+                f"Preserve structure. Return only the updated body.\n\n"
+                f"EXISTING BODY:\n{old_body}\n\nNEW INFORMATION:\n{message}",
+            )
+        else:
+            new_body = f"{old_body}\n\n### Update\n\n{message}"
+
+        updated = (frontmatter + "\n" + new_body.strip() + "\n") if frontmatter else (new_body.strip() + "\n")
+        full_path.write_text(updated, encoding="utf-8")
+
+        if vector_store is not None:
+            try:
+                vector_store.upsert_note(target_path, updated)
+            except Exception as exc:
+                logger.warning("vector upsert after update: %s", exc)
+
+        logger.info("executor: updated %s", target_path)
+        return f"✅ Updated `{target_path}`"
+    except Exception as exc:
+        logger.error("executor: update_note failed: %s", exc)
+        return f"❌ Could not update: {exc}"
 
 
 async def _save_note(
@@ -168,6 +397,56 @@ async def _save_note(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+async def _find_target_note(plan: ActionPlan, message: str, vector_store, index, config) -> str | None:
+    """Find the most relevant existing note path for append/update operations."""
+    # 1. Vector similarity search
+    if vector_store is not None:
+        try:
+            loop = asyncio.get_running_loop()
+            results = await loop.run_in_executor(
+                None, vector_store.search, message,
+                config.embedding.top_k_results,
+            )
+            if results:
+                top = results[0]
+                similarity = getattr(top, "similarity", 0) or getattr(top, "distance", 0)
+                path = getattr(top, "path", None) or getattr(top, "id", None)
+                if path and similarity >= 0.60:
+                    logger.info("executor: target note via vector search: %s (%.2f)", path, similarity)
+                    return path
+        except Exception as exc:
+            logger.warning("executor: vector search for target failed: %s", exc)
+
+    # 2. Topic folder match — pick the most recent note in target_folder
+    folder = plan.target_folder
+    if folder:
+        candidates = [
+            (path, note) for path, note in index.notes.items()
+            if note.folder.split("/")[0].lower() == folder.lower()
+        ]
+        if candidates:
+            # Sort by note_number descending (most recent)
+            candidates.sort(key=lambda x: x[1].note_number, reverse=True)
+            path = candidates[0][0]
+            logger.info("executor: target note via folder match: %s", path)
+            return path
+
+    return None
+
+
+async def _re_route(message: str, provider, index) -> ActionPlan:
+    """Re-route a clarified message through the AI router."""
+    from vault_writer.ai.router import route, _heuristic_route
+    if provider is None:
+        return _heuristic_route(message)
+    try:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, route, message, provider, index)
+    except Exception as exc:
+        logger.warning("_re_route failed: %s", exc)
+        return _heuristic_route(message)
+
 
 def _building_prefix(vector_store) -> str:
     if vector_store is not None and getattr(vector_store, "_building", False):

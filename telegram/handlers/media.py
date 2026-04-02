@@ -99,27 +99,32 @@ async def _handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
         caption = update.message.caption or ""
         text = f"{caption} {result.text}".strip() if caption else result.text
-        note_type, clean_text = detect_prefix(text, config.prefixes)
 
         index = context.bot_data["index"]
         stats = context.bot_data["stats"]
         provider = context.bot_data.get("provider")
         vector_store = context.bot_data.get("vector_store")
 
-        create_result = await _run_create_note(
-            clean_text, note_type, None, config, index, stats, provider, vector_store
-        )
-
-        if create_result.get("success"):
-            from telegram.formatter import format_confirmation, format_similarity_notice
-            reply = format_confirmation(create_result["file_path"])
-            notices = create_result.get("similarity_notices", [])
-            if notices:
-                reply += "\n\n" + format_similarity_notice(notices)
-            if config.git.enabled and config.git.auto_commit:
-                _git_commit(create_result["file_path"], config)
+        # Check explicit prefix first; otherwise route via AI semantic router
+        note_type, clean_text = detect_prefix(text, config.prefixes)
+        if note_type is not None:
+            create_result = await _run_create_note(
+                clean_text, note_type, None, config, index, stats, provider, vector_store
+            )
+            if create_result.get("success"):
+                from telegram.formatter import format_confirmation, format_similarity_notice
+                reply = format_confirmation(create_result["file_path"])
+                notices = create_result.get("similarity_notices", [])
+                if notices:
+                    reply += "\n\n" + format_similarity_notice(notices)
+                if config.git.enabled and config.git.auto_commit:
+                    _git_commit(create_result["file_path"], config)
+            else:
+                reply = f"❌ Помилка: {create_result.get('error', 'невідома помилка')}"
         else:
-            reply = f"❌ Помилка: {create_result.get('error', 'невідома помилка')}"
+            reply = await _route_and_execute(
+                text, update, context, config, index, stats, provider, vector_store
+            )
 
         await update.message.reply_text(reply)
 
@@ -162,28 +167,31 @@ async def _handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         caption = update.message.caption or ""
         text = f"{caption} {description}".strip() if caption else description
         if not text:
-            text = caption
-
-        note_type, clean_text = detect_prefix(text, config.prefixes) if text else (None, "")
+            text = caption or "photo"
 
         index = context.bot_data["index"]
         stats = context.bot_data["stats"]
         vector_store = context.bot_data.get("vector_store")
 
-        create_result = await _run_create_note(
-            clean_text or "photo", note_type, None, config, index, stats, provider, vector_store
-        )
-
-        if create_result.get("success"):
-            from telegram.formatter import format_confirmation, format_similarity_notice
-            reply = format_confirmation(create_result["file_path"])
-            notices = create_result.get("similarity_notices", [])
-            if notices:
-                reply += "\n\n" + format_similarity_notice(notices)
-            if config.git.enabled and config.git.auto_commit:
-                _git_commit(create_result["file_path"], config)
+        note_type, clean_text = detect_prefix(text, config.prefixes)
+        if note_type is not None:
+            create_result = await _run_create_note(
+                clean_text or text, note_type, None, config, index, stats, provider, vector_store
+            )
+            if create_result.get("success"):
+                from telegram.formatter import format_confirmation, format_similarity_notice
+                reply = format_confirmation(create_result["file_path"])
+                notices = create_result.get("similarity_notices", [])
+                if notices:
+                    reply += "\n\n" + format_similarity_notice(notices)
+                if config.git.enabled and config.git.auto_commit:
+                    _git_commit(create_result["file_path"], config)
+            else:
+                reply = f"❌ Помилка: {create_result.get('error', 'невідома помилка')}"
         else:
-            reply = f"❌ Помилка: {create_result.get('error', 'невідома помилка')}"
+            reply = await _route_and_execute(
+                text, update, context, config, index, stats, provider, vector_store
+            )
 
         await update.message.reply_text(reply)
 
@@ -254,51 +262,58 @@ async def _handle_document(
             text = f"{caption} {extracted.ai_context}".strip() if caption else extracted.ai_context
             note_type, clean_text = detect_prefix(text, config.prefixes)
 
-            create_result = await _run_create_note(
-                clean_text,
-                note_type,
-                None,
-                config,
-                index,
-                stats,
-                provider,
-                vector_store,
-                content_override=extracted.full_text,
-            )
-
-            if create_result.get("success"):
-                from telegram.formatter import format_confirmation, format_similarity_notice
-                reply = format_confirmation(create_result["file_path"])
+            if note_type is not None:
+                # Explicit prefix — bypass router
+                create_result = await _run_create_note(
+                    clean_text, note_type, None, config, index, stats, provider, vector_store,
+                    content_override=extracted.full_text,
+                )
+                if create_result.get("success"):
+                    from telegram.formatter import format_confirmation, format_similarity_notice
+                    reply = format_confirmation(create_result["file_path"])
+                    if extracted.truncated:
+                        from telegram.formatter import format_pdf_truncated_notice
+                        reply += f"\n{format_pdf_truncated_notice(extracted.pages_extracted)}"
+                    notices = create_result.get("similarity_notices", [])
+                    if notices:
+                        reply += "\n\n" + format_similarity_notice(notices)
+                    if config.git.enabled and config.git.auto_commit:
+                        _git_commit(create_result["file_path"], config)
+                else:
+                    reply = f"❌ Помилка: {create_result.get('error', 'невідома помилка')}"
+            else:
+                # Route via AI router; inject full_text as content_override
+                reply = await _route_and_execute(
+                    text, update, context, config, index, stats, provider, vector_store,
+                    content_override=extracted.full_text,
+                )
                 if extracted.truncated:
                     from telegram.formatter import format_pdf_truncated_notice
                     reply += f"\n{format_pdf_truncated_notice(extracted.pages_extracted)}"
-                notices = create_result.get("similarity_notices", [])
-                if notices:
-                    reply += "\n\n" + format_similarity_notice(notices)
-                if config.git.enabled and config.git.auto_commit:
-                    _git_commit(create_result["file_path"], config)
-            else:
-                reply = f"❌ Помилка: {create_result.get('error', 'невідома помилка')}"
 
         else:  # MediaType.TEXT_FILE
             content = file_bytes.decode("utf-8", errors="replace")
             text = f"{caption} {content}".strip() if caption else content
             note_type, clean_text = detect_prefix(text, config.prefixes)
 
-            create_result = await _run_create_note(
-                clean_text, note_type, None, config, index, stats, provider, vector_store
-            )
-
-            if create_result.get("success"):
-                from telegram.formatter import format_confirmation, format_similarity_notice
-                reply = format_confirmation(create_result["file_path"])
-                notices = create_result.get("similarity_notices", [])
-                if notices:
-                    reply += "\n\n" + format_similarity_notice(notices)
-                if config.git.enabled and config.git.auto_commit:
-                    _git_commit(create_result["file_path"], config)
+            if note_type is not None:
+                create_result = await _run_create_note(
+                    clean_text, note_type, None, config, index, stats, provider, vector_store
+                )
+                if create_result.get("success"):
+                    from telegram.formatter import format_confirmation, format_similarity_notice
+                    reply = format_confirmation(create_result["file_path"])
+                    notices = create_result.get("similarity_notices", [])
+                    if notices:
+                        reply += "\n\n" + format_similarity_notice(notices)
+                    if config.git.enabled and config.git.auto_commit:
+                        _git_commit(create_result["file_path"], config)
+                else:
+                    reply = f"❌ Помилка: {create_result.get('error', 'невідома помилка')}"
             else:
-                reply = f"❌ Помилка: {create_result.get('error', 'невідома помилка')}"
+                reply = await _route_and_execute(
+                    text, update, context, config, index, stats, provider, vector_store
+                )
 
         await update.message.reply_text(reply)
 
@@ -309,6 +324,74 @@ async def _handle_document(
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+async def _route_and_execute(
+    text: str,
+    update,
+    context,
+    config,
+    index,
+    stats,
+    provider,
+    vector_store,
+    content_override: str | None = None,
+) -> str:
+    """Route text through AI semantic router and execute the resulting ActionPlan."""
+    from vault_writer.ai.router import route, _heuristic_route
+    from vault_writer.tools.executor import execute
+
+    if provider is not None:
+        try:
+            loop = asyncio.get_running_loop()
+            plan = await loop.run_in_executor(None, route, text, provider, index)
+        except Exception as exc:
+            logger.warning("media route failed (%s) — heuristic", exc)
+            plan = _heuristic_route(text)
+    else:
+        plan = _heuristic_route(text)
+
+    # For media with content_override (PDFs), force create_note and inject override
+    if content_override is not None:
+        from vault_writer.ai.router import Intent
+        plan.should_save = True
+        if plan.intent not in (
+            Intent.CREATE_NOTE, Intent.APPEND_NOTE,
+            Intent.UPDATE_NOTE, Intent.EXTRACT_STRUCTURED,
+        ):
+            plan.intent = Intent.CREATE_NOTE
+
+        from vault_writer.tools.create_note import handle_create_note_from_plan
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, handle_create_note_from_plan,
+            text, plan, config, index, stats, provider, vector_store, content_override,
+        )
+        if result.get("success"):
+            from telegram.formatter import format_confirmation, format_similarity_notice
+            reply = format_confirmation(result["file_path"])
+            notices = result.get("similarity_notices", [])
+            if notices:
+                reply += "\n\n" + format_similarity_notice(notices)
+            if config.git.enabled and config.git.auto_commit:
+                _git_commit(result["file_path"], config)
+            return reply
+        return f"❌ Помилка: {result.get('error', 'невідома помилка')}"
+
+    reply = await execute(
+        plan=plan,
+        message=text,
+        update=update,
+        context=context,
+        config=config,
+        index=index,
+        stats=stats,
+        provider=provider,
+        vector_store=vector_store,
+    )
+    if reply and plan.should_save and config.git.enabled and config.git.auto_commit:
+        _git_commit(stats.last_note_path, config)
+    return reply or ""
 
 
 async def _run_create_note(
