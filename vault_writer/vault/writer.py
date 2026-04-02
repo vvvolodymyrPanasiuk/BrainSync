@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 # Characters forbidden in Windows filenames
 _WIN_FORBIDDEN = str.maketrans({c: "" for c in r'\/:*?"<>|'})
 
+# Sub-folder where notes are stored inside each topic folder
+DATA_SUBFOLDER = "_data"
+
 
 def _sanitize_filename(title: str, max_len: int = 80) -> str:
     """Remove Windows-forbidden characters and trim to max_len."""
@@ -40,8 +43,9 @@ class VaultNote:
     content: str                     # markdown body (after frontmatter)
     file_path: str                   # vault-relative path
     note_type: NoteType
-    folder: str                      # vault-relative folder name
-    note_number: int                 # sequential number within folder
+    folder: str                      # vault-relative folder name (topic)
+    note_number: int                 # sequential number within _data/
+    use_data_subfolder: bool = True  # write to folder/_data/ (new structure)
 
 
 # ── Thread-safe sequential numbering ─────────────────────────────────────────
@@ -76,17 +80,33 @@ def _assert_within_vault(path: Path, vault: Path, label: str) -> None:
 
 
 def write_note(note: VaultNote, vault_path: str) -> str:
-    """Write note to vault. Returns vault-relative file path. Thread-safe."""
+    """Write note to vault. Returns vault-relative file path. Thread-safe.
+
+    New structure (use_data_subfolder=True):
+        Topic/_data/0001 Title.md
+    Legacy structure (use_data_subfolder=False):
+        Topic/0001 Title.md
+    """
     with _write_lock:
         vault = Path(vault_path)
-        folder = vault / note.folder
-        _assert_within_vault(folder, vault, note.folder)
-        create_folder_if_missing(folder)
-        note.note_number = next_note_number(folder)
+        topic_folder = vault / note.folder
+        _assert_within_vault(topic_folder, vault, note.folder)
+        create_folder_if_missing(topic_folder)
+
+        # Determine target folder for the note file
+        if note.use_data_subfolder:
+            data_folder = topic_folder / DATA_SUBFOLDER
+            create_folder_if_missing(data_folder)
+            rel_data = f"{note.folder}/{DATA_SUBFOLDER}"
+        else:
+            data_folder = topic_folder
+            rel_data = note.folder
+
+        note.note_number = next_note_number(data_folder)
         safe_title = _sanitize_filename(note.title)
         filename = f"{note.note_number:04d} {safe_title}.md"
-        note.file_path = f"{note.folder}/{filename}"
-        full_path = folder / filename
+        note.file_path = f"{rel_data}/{filename}"
+        full_path = data_folder / filename
         _assert_within_vault(full_path, vault, note.file_path)
 
         frontmatter = _build_frontmatter(note)

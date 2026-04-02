@@ -9,6 +9,7 @@ from vault_writer.ai.formatter import format_note
 from vault_writer.ai.provider import ProcessingMode
 from vault_writer.vault.indexer import VaultIndex, update_index
 from vault_writer.vault.writer import NoteType, VaultNote, create_moc_if_missing, update_moc, write_note
+from vault_writer.vault.writer import DATA_SUBFOLDER
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,7 @@ def handle_create_note(
         note_type=classification.note_type,
         folder=classification.folder,
         note_number=0,          # filled by write_note
+        use_data_subfolder=True,
     )
 
     # ── Write ─────────────────────────────────────────────────────────────────
@@ -174,3 +176,132 @@ def handle_create_note(
 
 def _default_body(text: str) -> str:
     return f"## Description\n\n{text}\n\n## Conclusions\n\n## Links\n"
+
+
+def handle_create_note_from_plan(
+    text: str,
+    plan,               # vault_writer.ai.router.ActionPlan
+    config,
+    index: VaultIndex,
+    stats,
+    provider=None,
+    vector_store=None,
+    content_override: str | None = None,
+) -> dict:
+    """Orchestrate note creation from a pre-built ActionPlan (from AI Router)."""
+    from vault_writer.ai.router import Intent
+
+    mode = ProcessingMode(config.ai.processing_mode)
+    today = _date.today().isoformat()
+
+    # Map router note_type string → NoteType enum
+    _type_map = {
+        "task": NoteType.TASK,
+        "idea": NoteType.IDEA,
+        "journal": NoteType.JOURNAL,
+        "note": NoteType.NOTE,
+    }
+    note_type = _type_map.get(plan.note_type, NoteType.NOTE)
+
+    folder = plan.target_folder or "General"
+    subfolder = plan.target_subfolder or ""
+    title = plan.title or text[:60]
+
+    # Build full folder path: Topic or Topic/Subtopic
+    full_folder = f"{folder}/{subfolder}".rstrip("/") if subfolder else folder
+
+    classification = ClassificationResult(
+        note_type=note_type,
+        topic=plan.topic or folder,
+        folder=full_folder,
+        parent_moc=f"0 {folder}.md",
+        title=title,
+        confidence=plan.confidence,
+    )
+
+    # ── Format ────────────────────────────────────────────────────────────────
+    if provider is not None and mode in (ProcessingMode.BALANCED, ProcessingMode.FULL):
+        try:
+            content = format_note(text, classification, provider, config)
+        except Exception as exc:
+            logger.warning("format_note error: %s — using raw text", exc)
+            content = _default_body(text)
+    else:
+        content = _default_body(text)
+
+    if content_override is not None:
+        content = content_override
+
+    # ── Enrich ────────────────────────────────────────────────────────────────
+    if (content_override is None and provider is not None
+            and mode == ProcessingMode.FULL and config.enrichment_add_wikilinks):
+        try:
+            from vault_writer.ai.enricher import add_wikilinks
+            content = add_wikilinks(content, index, config)
+        except Exception as exc:
+            logger.warning("add_wikilinks error: %s — skipping", exc)
+
+    # ── Build VaultNote ───────────────────────────────────────────────────────
+    tags = plan.tags or []
+    if not any(t.startswith("areas/") for t in tags):
+        tags = [f"areas/{folder.lower()}", f"types/{note_type.value}"] + tags
+
+    note = VaultNote(
+        title=title,
+        date=today,
+        categories=[folder],
+        tags=tags,
+        moc=f"[[0 {folder}]]",
+        content=content,
+        file_path="",
+        note_type=note_type,
+        folder=full_folder,
+        note_number=0,
+        use_data_subfolder=True,
+    )
+
+    # ── Write ─────────────────────────────────────────────────────────────────
+    try:
+        file_path = write_note(note, config.vault.path)
+    except Exception as exc:
+        logger.error("write_note failed: %s", exc)
+        return {"success": False, "error": str(exc)}
+
+    # ── MoC ───────────────────────────────────────────────────────────────────
+    if config.enrichment_update_moc:
+        try:
+            moc_path = create_moc_if_missing(folder, config.vault.path)
+            update_moc(moc_path, file_path, note.title, note.note_number, config.vault.path)
+        except Exception as exc:
+            logger.warning("update_moc error: %s", exc)
+
+    # ── Index + Stats ─────────────────────────────────────────────────────────
+    update_index(index, note)
+    stats.last_note_path = file_path
+    stats.notes_saved_today += 1
+    stats.vault_notes_total = index.total_notes
+
+    # ── Vector store ──────────────────────────────────────────────────────────
+    similarity_notices = []
+    if vector_store is not None:
+        try:
+            vector_store.upsert_note(file_path, content)
+            emb_cfg = getattr(config, "embedding", None)
+            dup_thr = getattr(emb_cfg, "similarity_duplicate_threshold", 0.85)
+            rel_thr = getattr(emb_cfg, "similarity_related_threshold", 0.70)
+            raw_notices = vector_store.find_similar(
+                content, exclude_path=file_path, top_k=3,
+                duplicate_threshold=dup_thr, related_threshold=rel_thr,
+            )
+            similarity_notices = [n for n in raw_notices if n.similarity >= rel_thr]
+        except Exception as exc:
+            logger.warning("vector_store error: %s", exc)
+
+    return {
+        "success": True,
+        "file_path": file_path,
+        "note_type": note_type.value,
+        "folder": full_folder,
+        "title": title,
+        "similarity_notices": similarity_notices,
+    }

@@ -42,12 +42,25 @@ def build_index(vault_path: str) -> VaultIndex:
         name = md_file.name
         folder = md_file.parent.relative_to(vault).as_posix() if md_file.parent != vault else ""
 
-        # Detect MoC files (named "0 *.md")
-        if name.startswith("0 ") and name.endswith(".md"):
-            topic = name[2:-3]  # strip "0 " prefix and ".md"
+        # Detect MoC files: named "0 *.md" OR has tags containing "types/moc"
+        is_moc = name.startswith("0 ") and name.endswith(".md")
+        if not is_moc:
+            moc_tags = fm.get("tags", []) or []
+            if isinstance(moc_tags, list):
+                is_moc = "types/moc" in moc_tags
+        if is_moc:
+            topic = fm.get("title") or name[2:-3] if name.startswith("0 ") else name[:-3]
             index.mocs[topic.lower()] = rel
-            index.topics.append(topic)
+            if topic not in index.topics:
+                index.topics.append(topic)
             continue
+
+        # Skip _data folder marker (if any empty .md exists there)
+        # Notes inside _data/ have folder like "Topic/_data"
+        # Strip _data suffix to get the logical topic folder
+        logical_folder = folder
+        if folder.endswith("/_data") or folder == "_data":
+            logical_folder = folder[: -len("/_data")] if "/_data" in folder else ""
 
         note_number = 0
         prefix = name.split(" ")[0]
@@ -65,8 +78,9 @@ def build_index(vault_path: str) -> VaultIndex:
             content="",   # not loaded into index — read on demand
             file_path=rel,
             note_type=note_type,
-            folder=folder,
+            folder=logical_folder,
             note_number=note_number,
+            use_data_subfolder=("/_data/" in rel),
         )
         index.notes[rel] = note
         for tag in note.tags:
@@ -84,8 +98,10 @@ def update_index(index: VaultIndex, note: VaultNote) -> None:
     index.notes[note.file_path] = note
     for tag in note.tags:
         index.tags.add(tag)
-    if note.folder and note.folder not in index.topics:
-        index.topics.append(note.folder)
+    # Use top-level folder (before /_data) as topic
+    top_folder = note.folder.split("/")[0] if note.folder else ""
+    if top_folder and top_folder not in index.topics:
+        index.topics.append(top_folder)
         index.topics.sort()
     index.total_notes = len(index.notes)
     index.last_updated = datetime.now()
