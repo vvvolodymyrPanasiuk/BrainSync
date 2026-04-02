@@ -139,8 +139,13 @@ async def _analyze_vault(message: str, provider, index) -> str:
             "Answer helpfully in the same language as the user's message. "
             "Be specific about what topics exist and how many notes are in each."
         )
+        import time as _time
+        logger.info("executor: _analyze_vault → sending to AI…")
+        _t0 = _time.monotonic()
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, provider.complete, prompt)
+        result = await loop.run_in_executor(None, provider.complete, prompt)
+        logger.info("executor: _analyze_vault ← AI replied in %.1fs", _time.monotonic() - _t0)
+        return result
 
     return f"📚 Vault overview:\n{vault_summary}"
 
@@ -167,11 +172,15 @@ async def _chat(message: str, provider) -> str:
         return t("ai_unavailable")
     prompt = f"Respond in the same language as the user's message.\n\nUser: {message}"
     loop = asyncio.get_running_loop()
+    import time as _time
+    logger.info("executor: _chat → sending to AI…")
+    _t0 = _time.monotonic()
     try:
         answer = await loop.run_in_executor(None, provider.complete, prompt)
+        logger.info("executor: _chat ← AI replied in %.1fs", _time.monotonic() - _t0)
         return format_chat_reply(answer)
     except Exception as exc:
-        logger.warning("_chat AI call failed: %s", exc)
+        logger.warning("executor: _chat AI call failed after %.1fs: %s", _time.monotonic() - _t0, exc)
         return t("ai_unavailable")
 
 

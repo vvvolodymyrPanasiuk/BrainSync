@@ -211,7 +211,7 @@ def load_config(config_path: str) -> AppConfig:
             max_context_tokens=ai_raw.get("max_context_tokens", 4000),
             api_key=api_key,
             ollama_vision_model=ai_raw.get("ollama_vision_model", ""),
-            ollama_timeout=int(ai_raw.get("ollama_timeout", 120)),
+            ollama_timeout=int(ai_raw.get("ollama_timeout", 900)),
         ),
         vault=VaultConfig(
             path=vault_path,

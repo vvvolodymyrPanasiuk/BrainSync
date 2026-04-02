@@ -57,6 +57,10 @@ class OllamaProvider(AIProvider):
     def complete(self, prompt: str, max_tokens: int = 1000) -> str:
         import requests
         timeout = (_CONNECT_TIMEOUT, self._timeout)
+        logger.debug(
+            "ollama.complete: model=%s max_tokens=%d timeout=%ds prompt_len=%d",
+            self._model, max_tokens, self._timeout, len(prompt),
+        )
         try:
             response = requests.post(
                 f"{self._base_url}/api/chat",

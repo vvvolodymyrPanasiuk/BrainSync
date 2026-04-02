@@ -178,7 +178,13 @@ def route(message: str, provider, vault_index=None) -> ActionPlan:
 
     try:
         prompt = _ROUTER_SYSTEM.format(message=message, topics_hint=topics_hint)
-        raw = provider.complete(prompt, max_tokens=450)
+        import time as _time
+        logger.info("router: sending to AI (message=%.60r)…", message)
+        _t0 = _time.monotonic()
+        raw = provider.complete(prompt, max_tokens=1500)
+        _elapsed = _time.monotonic() - _t0
+        logger.info("router: AI responded in %.1fs (%d chars)", _elapsed, len(raw))
+        logger.debug("router: raw response: %.300s", raw)
         data = _extract_json(raw)
 
         intent_str = data.get("intent", "create_note")
