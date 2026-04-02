@@ -8,9 +8,8 @@ from vault_writer.ai.provider import AIProvider
 
 logger = logging.getLogger(__name__)
 
-# Separate timeouts: connect fast, allow longer generation
-_CONNECT_TIMEOUT = 5   # seconds to establish TCP connection
-_WARMUP_TIMEOUT  = 900 # seconds for cold-start warmup ping (model load)
+_CONNECT_TIMEOUT = 5  # seconds to establish TCP connection (fail fast if Ollama is down)
+# Read timeout is None everywhere — wait indefinitely for model response
 
 
 class OllamaProvider(AIProvider):
@@ -19,12 +18,11 @@ class OllamaProvider(AIProvider):
         base_url: str = "http://localhost:11434",
         model: str = "mistral",
         vision_model: str = "",
-        timeout: int = 900,
+        timeout: int = 900,  # kept for config compat, no longer used as read timeout
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._vision_model = vision_model
-        self._timeout = timeout  # configurable via config.yaml ai.ollama_timeout
 
     def list_models(self) -> list[str]:
         """Return list of model names available in Ollama."""
@@ -37,9 +35,8 @@ class OllamaProvider(AIProvider):
             return []
 
     def warmup(self) -> None:
-        """Send a minimal request to force model load into VRAM/RAM.
-        Blocks until the model is ready. Uses _WARMUP_TIMEOUT (15 min).
-        Raises RuntimeError if Ollama is unreachable, model missing, or times out."""
+        """Send a minimal request to force model load into RAM.
+        Waits indefinitely until the model responds."""
         import requests
         logger.info("Ollama warmup: loading model '%s' into memory…", self._model)
         try:
@@ -51,7 +48,7 @@ class OllamaProvider(AIProvider):
                     "stream": False,
                     "options": {"num_predict": 1},
                 },
-                timeout=(_CONNECT_TIMEOUT, _WARMUP_TIMEOUT),
+                timeout=(_CONNECT_TIMEOUT, None),  # no read timeout
             )
             if response.status_code == 500:
                 try:
@@ -73,17 +70,12 @@ class OllamaProvider(AIProvider):
             raise RuntimeError(
                 f"Ollama not reachable at {self._base_url} — is it running?"
             ) from exc
-        except requests.exceptions.ReadTimeout as exc:
-            raise RuntimeError(
-                f"Ollama warmup timed out after {_WARMUP_TIMEOUT}s — model did not load"
-            ) from exc
 
     def complete(self, prompt: str, max_tokens: int = 1000) -> str:
         import requests
-        timeout = (_CONNECT_TIMEOUT, self._timeout)
         logger.debug(
-            "ollama.complete: model=%s max_tokens=%d timeout=%ds prompt_len=%d",
-            self._model, max_tokens, self._timeout, len(prompt),
+            "ollama.complete: model=%s max_tokens=%d prompt_len=%d",
+            self._model, max_tokens, len(prompt),
         )
         try:
             response = requests.post(
@@ -94,7 +86,7 @@ class OllamaProvider(AIProvider):
                     "stream": False,
                     "options": {"num_predict": max_tokens},
                 },
-                timeout=timeout,
+                timeout=(_CONNECT_TIMEOUT, None),  # no read timeout
             )
             if response.status_code == 500:
                 try:
@@ -108,10 +100,6 @@ class OllamaProvider(AIProvider):
         except requests.exceptions.ConnectionError as exc:
             raise RuntimeError(
                 f"Ollama not reachable at {self._base_url} — is it running? ({exc})"
-            ) from exc
-        except requests.exceptions.ReadTimeout as exc:
-            raise RuntimeError(
-                f"Ollama timed out after {timeout[1]}s — model may be loading or too slow"
             ) from exc
 
     def complete_with_image(
@@ -138,15 +126,11 @@ class OllamaProvider(AIProvider):
                     "stream": False,
                     "options": {"num_predict": max_tokens},
                 },
-                timeout=(_CONNECT_TIMEOUT, self._timeout),
+                timeout=(_CONNECT_TIMEOUT, None),  # no read timeout
             )
             response.raise_for_status()
             return response.json()["message"]["content"]
         except requests.exceptions.ConnectionError as exc:
             raise RuntimeError(
                 f"Ollama not reachable at {self._base_url} — is it running? ({exc})"
-            ) from exc
-        except requests.exceptions.ReadTimeout as exc:
-            raise RuntimeError(
-                f"Ollama vision timed out — model may be loading or too slow"
             ) from exc
