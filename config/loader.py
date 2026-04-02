@@ -34,6 +34,7 @@ class AIConfig:
     max_context_tokens: int
     api_key: str                   # NEVER logged or committed
     ollama_vision_model: str = ""  # vision model for Ollama (e.g. "llava")
+    ollama_timeout: int = 120      # seconds to wait for Ollama response (increase for slow hardware)
 
 
 @dataclass
@@ -210,6 +211,7 @@ def load_config(config_path: str) -> AppConfig:
             max_context_tokens=ai_raw.get("max_context_tokens", 4000),
             api_key=api_key,
             ollama_vision_model=ai_raw.get("ollama_vision_model", ""),
+            ollama_timeout=int(ai_raw.get("ollama_timeout", 120)),
         ),
         vault=VaultConfig(
             path=vault_path,
@@ -295,6 +297,7 @@ def get_ai_provider(config: AppConfig):
             base_url=config.ai.ollama_url,
             model=config.ai.model,
             vision_model=config.ai.ollama_vision_model,
+            timeout=config.ai.ollama_timeout,
         )
     raise ValueError(f"Unsupported AI provider: {config.ai.provider!r}")
 

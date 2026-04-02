@@ -9,9 +9,7 @@ from vault_writer.ai.provider import AIProvider
 logger = logging.getLogger(__name__)
 
 # Separate timeouts: connect fast, allow longer generation
-_CONNECT_TIMEOUT = 5    # seconds to establish TCP connection
-_READ_TIMEOUT_CHAT = 60 # seconds to wait for response (chat / routing)
-_READ_TIMEOUT_LONG = 90 # seconds for heavy tasks (PDF summary, enrichment)
+_CONNECT_TIMEOUT = 5  # seconds to establish TCP connection
 
 
 class OllamaProvider(AIProvider):
@@ -20,14 +18,16 @@ class OllamaProvider(AIProvider):
         base_url: str = "http://localhost:11434",
         model: str = "mistral",
         vision_model: str = "",
+        timeout: int = 120,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._vision_model = vision_model
+        self._timeout = timeout  # configurable via config.yaml ai.ollama_timeout
 
     def complete(self, prompt: str, max_tokens: int = 1000) -> str:
         import requests
-        timeout = (_CONNECT_TIMEOUT, _READ_TIMEOUT_LONG if max_tokens > 500 else _READ_TIMEOUT_CHAT)
+        timeout = (_CONNECT_TIMEOUT, self._timeout)
         try:
             response = requests.post(
                 f"{self._base_url}/api/chat",
@@ -74,7 +74,7 @@ class OllamaProvider(AIProvider):
                     "stream": False,
                     "options": {"num_predict": max_tokens},
                 },
-                timeout=(_CONNECT_TIMEOUT, _READ_TIMEOUT_LONG),
+                timeout=(_CONNECT_TIMEOUT, self._timeout),
             )
             response.raise_for_status()
             return response.json()["message"]["content"]
