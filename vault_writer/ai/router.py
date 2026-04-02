@@ -122,6 +122,56 @@ USER MESSAGE:
 Return ONLY the JSON object."""
 
 
+def _extract_json(raw: str) -> dict:
+    """Robustly extract JSON dict from AI response.
+
+    Handles:
+    - <think>...</think> blocks (Qwen3, DeepSeek-R1 thinking models)
+    - JSON without wrapping {} (model emits bare key-value pairs)
+    - Preamble text before the JSON object
+    """
+    # 1. Strip thinking blocks
+    text = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+
+    # 2. Try standard extraction: find first { ... last }
+    json_start = text.find("{")
+    json_end = text.rfind("}") + 1
+    if json_start != -1 and json_end > json_start:
+        try:
+            return json.loads(text[json_start:json_end])
+        except json.JSONDecodeError:
+            pass  # fall through to repair attempts
+
+    # 3. Model returned bare JSON fields without {} — wrap and retry
+    if '"intent"' in text:
+        # Find where the key-value block starts (first " on a line)
+        block_start = text.find('"intent"')
+        if block_start == -1:
+            block_start = 0
+        # Find where it ends: last value before any trailing text
+        # Heuristic: last line that looks like JSON value
+        lines = text[block_start:].strip().splitlines()
+        json_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and (stripped.startswith('"') or stripped[0] in '0123456789-[{tfn'):
+                json_lines.append(line)
+            elif stripped.startswith("}"):
+                break
+        if json_lines:
+            # Remove trailing comma from last field if present
+            last = json_lines[-1].rstrip()
+            if last.endswith(","):
+                json_lines[-1] = last[:-1]
+            candidate = "{\n" + "\n".join(json_lines) + "\n}"
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+
+    raise ValueError(f"No JSON in response: {raw[:200]!r}")
+
+
 def route(message: str, provider, vault_index=None) -> ActionPlan:
     """Semantically route message via AI. Falls back to heuristic on failure."""
     topics_hint = _topics_hint(vault_index)
@@ -129,13 +179,7 @@ def route(message: str, provider, vault_index=None) -> ActionPlan:
     try:
         prompt = _ROUTER_SYSTEM.format(message=message, topics_hint=topics_hint)
         raw = provider.complete(prompt, max_tokens=450)
-
-        json_start = raw.find("{")
-        json_end = raw.rfind("}") + 1
-        if json_start == -1 or json_end == 0 or json_start >= json_end:
-            raise ValueError(f"No JSON in response: {raw[:200]!r}")
-
-        data = json.loads(raw[json_start:json_end])
+        data = _extract_json(raw)
 
         intent_str = data.get("intent", "create_note")
         try:
