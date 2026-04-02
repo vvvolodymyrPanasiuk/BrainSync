@@ -9,7 +9,8 @@ from vault_writer.ai.provider import AIProvider
 logger = logging.getLogger(__name__)
 
 # Separate timeouts: connect fast, allow longer generation
-_CONNECT_TIMEOUT = 5  # seconds to establish TCP connection
+_CONNECT_TIMEOUT = 5   # seconds to establish TCP connection
+_WARMUP_TIMEOUT  = 900 # seconds for cold-start warmup ping (model load)
 
 
 class OllamaProvider(AIProvider):
@@ -18,12 +19,40 @@ class OllamaProvider(AIProvider):
         base_url: str = "http://localhost:11434",
         model: str = "mistral",
         vision_model: str = "",
-        timeout: int = 120,
+        timeout: int = 900,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._vision_model = vision_model
         self._timeout = timeout  # configurable via config.yaml ai.ollama_timeout
+
+    def warmup(self) -> None:
+        """Send a minimal request to force model load into VRAM/RAM.
+        Blocks until the model is ready. Uses _WARMUP_TIMEOUT (15 min).
+        Raises RuntimeError if Ollama is unreachable or times out."""
+        import requests
+        logger.info("Ollama warmup: loading model '%s' into memory…", self._model)
+        try:
+            response = requests.post(
+                f"{self._base_url}/api/chat",
+                json={
+                    "model": self._model,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "stream": False,
+                    "options": {"num_predict": 1},
+                },
+                timeout=(_CONNECT_TIMEOUT, _WARMUP_TIMEOUT),
+            )
+            response.raise_for_status()
+            logger.info("Ollama warmup complete — model '%s' is ready", self._model)
+        except requests.exceptions.ConnectionError as exc:
+            raise RuntimeError(
+                f"Ollama not reachable at {self._base_url} — is it running?"
+            ) from exc
+        except requests.exceptions.ReadTimeout as exc:
+            raise RuntimeError(
+                f"Ollama warmup timed out after {_WARMUP_TIMEOUT}s — model did not load"
+            ) from exc
 
     def complete(self, prompt: str, max_tokens: int = 1000) -> str:
         import requests

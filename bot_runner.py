@@ -118,7 +118,33 @@ async def _ensure_infrastructure_ready(app) -> None:
         threading.Thread(target=_build, daemon=True, name="vault-indexer").start()
         logger.info("Background vault indexing started")
 
-    # Online notification
+    # AI warmup — load model into memory before declaring ready
+    provider = app.bot_data.get("provider")
+    if provider is not None and config.ai.provider == "ollama":
+        if allowed_ids:
+            try:
+                await app.bot.send_message(
+                    chat_id=allowed_ids[0],
+                    text="⏳ Loading AI model into memory… (cold start, please wait)",
+                )
+            except Exception:
+                pass
+        logger.info("AI warmup starting for provider=%s model=%s", config.ai.provider, config.ai.model)
+        try:
+            await loop.run_in_executor(None, provider.warmup)
+            logger.info("AI warmup complete")
+        except Exception as exc:
+            logger.warning("AI warmup failed: %s — bot will still start, first request may be slow", exc)
+            if allowed_ids:
+                try:
+                    await app.bot.send_message(
+                        chat_id=allowed_ids[0],
+                        text=f"⚠️ AI warmup failed: {exc}\nBot started but first response may be slow.",
+                    )
+                except Exception:
+                    pass
+
+    # Online notification — sent only after AI is ready
     if allowed_ids:
         from telegram.formatter import format_bot_online
         for uid in allowed_ids:

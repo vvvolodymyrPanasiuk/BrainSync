@@ -34,7 +34,7 @@ class AIConfig:
     max_context_tokens: int
     api_key: str                   # NEVER logged or committed
     ollama_vision_model: str = ""  # vision model for Ollama (e.g. "llava")
-    ollama_timeout: int = 120      # seconds to wait for Ollama response (increase for slow hardware)
+    ollama_timeout: int = 900      # seconds to wait for Ollama response (15 min default for slow hardware)
 
 
 @dataclass

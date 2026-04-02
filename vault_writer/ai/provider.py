@@ -19,6 +19,9 @@ class AIProvider(ABC):
         """Send prompt, return completion text."""
         ...
 
+    def warmup(self) -> None:
+        """Pre-load the model so first real request is fast. No-op by default."""
+
     def complete_with_image(
         self,
         prompt: str,
