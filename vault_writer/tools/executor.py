@@ -23,7 +23,29 @@ async def execute(
     provider,
     vector_store,
 ) -> str:
-    """Execute ActionPlan and return reply string. Empty string = no reply."""
+    """Execute ActionPlan and return reply string. Never raises — always returns a string."""
+    try:
+        return await _execute_inner(
+            plan, message, update, context, config, index, stats, provider, vector_store
+        )
+    except Exception as exc:
+        logger.error("executor: unhandled error intent=%s: %s", plan.intent.value, exc, exc_info=True)
+        from telegram.i18n import t
+        return t("ai_unavailable")
+
+
+async def _execute_inner(
+    plan: ActionPlan,
+    message: str,
+    update,
+    context,
+    config,
+    index,
+    stats,
+    provider,
+    vector_store,
+) -> str:
+    """Internal dispatcher — may raise; executor() catches all exceptions."""
     intent = plan.intent
     logger.debug("executor: dispatching intent=%s", intent.value)
 
@@ -145,8 +167,12 @@ async def _chat(message: str, provider) -> str:
         return t("ai_unavailable")
     prompt = f"Respond in the same language as the user's message.\n\nUser: {message}"
     loop = asyncio.get_running_loop()
-    answer = await loop.run_in_executor(None, provider.complete, prompt)
-    return format_chat_reply(answer)
+    try:
+        answer = await loop.run_in_executor(None, provider.complete, prompt)
+        return format_chat_reply(answer)
+    except Exception as exc:
+        logger.warning("_chat AI call failed: %s", exc)
+        return t("ai_unavailable")
 
 
 async def _search_web(message: str, provider) -> str:

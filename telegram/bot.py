@@ -46,10 +46,28 @@ def build_application(config, index, stats, provider, vector_store=None) -> Appl
     app.add_handler(MessageHandler(filters.PHOTO, handle_media_message))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_media_message))
 
+    # Global error handler — prevents "No error handlers registered" log spam
+    app.add_error_handler(_error_handler)
+
     # Scheduled jobs
     _register_scheduled_jobs(app, config)
 
     return app
+
+
+async def _error_handler(update, context) -> None:
+    """Log PTB errors and notify user if possible."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.error("PTB unhandled exception", exc_info=context.error)
+
+    # Try to reply to the user
+    if update and hasattr(update, "message") and update.message:
+        try:
+            from telegram.i18n import t
+            await update.message.reply_text(t("ai_unavailable"))
+        except Exception:
+            pass
 
 
 def _register_scheduled_jobs(app: Application, config) -> None:
