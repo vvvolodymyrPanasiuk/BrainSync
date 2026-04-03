@@ -14,6 +14,7 @@ class Intent(str, Enum):
     CREATE_NOTE           = "create_note"
     APPEND_NOTE           = "append_note"
     UPDATE_NOTE           = "update_note"
+    MOVE_NOTE             = "move_note"
     SEARCH_VAULT          = "search_vault"
     ANSWER_FROM_VAULT     = "answer_from_vault"
     ANALYZE_VAULT         = "analyze_vault"
@@ -42,6 +43,7 @@ _NO_SAVE_INTENTS = {
     Intent.MANUAL_REVIEW,
     Intent.TRANSCRIBE_AUDIO,
     Intent.OCR_IMAGE,
+    Intent.MOVE_NOTE,
 }
 
 
@@ -97,6 +99,7 @@ ALLOWED INTENTS:
 - summarize_vault: User wants a summary of recent or topic notes. should_save=false.
 - search_web: User explicitly needs external information. Use only if vault clearly cannot satisfy. should_save=false.
 - extract_structured_data: User provides structured data (table, receipt, CSV) to parse. should_save=true.
+- move_note: User wants to move/relocate an existing note to a different folder. target_folder=DESTINATION folder. should_save=false.
 - request_clarification: Message is too ambiguous to route. should_save=false.
 - chat_only: Casual talk, greeting, thanks, test, general AI question NOT about vault content. should_save=false.
 - ignore_spam: Random characters, obvious spam, noise. should_save=false.
@@ -271,14 +274,27 @@ def _heuristic_route(message: str) -> ActionPlan:
              "є нотатки про", "find notes", "search for"]):
         return _make_plan(Intent.SEARCH_VAULT, False, message)
 
+    # Move note commands
+    if _has(["перемісти нотатку", "перенеси нотатку", "переміщення нотатки",
+             "move note", "move to folder", "перемісти в папку", "перенеси в папку"]):
+        return _make_plan(Intent.MOVE_NOTE, False, message)
+
     # Chat / greetings
     if _has(["привіт", "вітаю", "добрий", "як справи", "дякую", "окей",
              "зрозуміло", "чудово", "бувай", "hello", "hey", "thanks",
              "thank you", "okay", "не треба", "просто питання"]):
         return _make_plan(Intent.CHAT_ONLY, False, message)
 
-    # Short questions → likely chat
-    if text.endswith("?") and len(text) < 120:
+    # Messages starting with question words → likely a clarification/chat, not a note
+    if re.match(
+        r"^(чому|навіщо|чим відрізняється|як так|як це так|чи правильно|чи можеш|хіба|"
+        r"what is|why did|why is|how come|why are|isn't it)",
+        text,
+    ):
+        return _make_plan(Intent.CHAT_ONLY, False, message)
+
+    # Questions ending with "?" → likely chat (extended limit to 400 chars)
+    if text.endswith("?") and len(text) < 400:
         return _make_plan(Intent.CHAT_ONLY, False, message)
 
     # Default: save

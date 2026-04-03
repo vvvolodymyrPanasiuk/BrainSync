@@ -84,6 +84,56 @@ async def _save_with_type(update: Update, context: ContextTypes.DEFAULT_TYPE, te
         _git_commit(result["file_path"], config)
 
 
+async def cmd_move(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Explicit note move: /move <тема нотатки> -> <папка призначення>"""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+    text = " ".join(context.args) if context.args else ""
+    if not text or "->" not in text:
+        await update.message.reply_text(
+            "Використання: /move <тема нотатки> -> <папка призначення>\n"
+            "Наприклад: /move лазанья -> Кулінарія"
+        )
+        return
+
+    from telegram.constants import ChatAction
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+    parts = text.split("->", 1)
+    topic = parts[0].strip()
+    dest_folder = parts[1].strip()
+
+    # Build a minimal plan for the executor
+    from vault_writer.ai.router import ActionPlan, Intent
+    import asyncio
+    plan = ActionPlan(
+        intent=Intent.MOVE_NOTE,
+        confidence=1.0,
+        should_save=False,
+        needs_web=False,
+        needs_clarification=False,
+        note_type="note",
+        target_folder=dest_folder,
+        target_subfolder="",
+        topic=topic,
+        tags=[],
+        summary=topic,
+        actions=["move_note"],
+        sources=[],
+        reason="explicit /move command",
+        title=topic,
+    )
+
+    index = context.bot_data["index"]
+    vector_store = context.bot_data.get("vector_store")
+
+    loop = asyncio.get_running_loop()
+    from vault_writer.tools.executor import _move_note
+    reply = await _move_note(topic, plan, config, index, vector_store)
+    await update.message.reply_text(reply, parse_mode="Markdown")
+
+
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config = context.bot_data["config"]
     if not auth_check(update, config):
@@ -95,6 +145,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/idea <текст> — зберегти ідею\n"
         "/journal <текст> — запис у щоденник\n"
         "/search <запит> — пошук у vault\n"
+        "/move <тема> -> <папка> — перемістити нотатку\n"
         "/mode minimal|balanced|full — змінити режим\n"
         "/status — статус бота\n"
         "/help — ця довідка"

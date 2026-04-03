@@ -85,6 +85,9 @@ async def _execute_inner(
         logger.info("executor: intent=%s — no reply", intent.value)
         return ""
 
+    if intent == Intent.MOVE_NOTE:
+        return await _move_note(message, plan, config, index, vector_store)
+
     if intent == Intent.APPEND_NOTE:
         return await _append_note(message, plan, config, index, stats, provider, vector_store)
 
@@ -429,6 +432,101 @@ async def _save_note(
             reply += "\n\n" + format_similarity_notice(notices)
         return reply
     return f"❌ Error: {result.get('error', 'unknown error')}"
+
+
+async def _move_note(
+    message: str,
+    plan: ActionPlan,
+    config,
+    index,
+    vector_store,
+) -> str:
+    """Move an existing note to a different vault folder."""
+    from pathlib import Path
+    from vault_writer.vault.writer import create_moc_if_missing, update_moc
+    from vault_writer.vault.indexer import update_index
+
+    vault = Path(config.vault.path)
+
+    # Destination folder comes from the router plan
+    dest_folder = plan.target_folder or ""
+    dest_subfolder = plan.target_subfolder or ""
+    if not dest_folder or dest_folder.lower() == "general":
+        return (
+            "❌ Не вдалося визначити папку призначення.\n"
+            "Вкажіть точніше, наприклад: *перемісти нотатку про лазанью у папку Кулінарія*"
+        )
+
+    full_dest = f"{dest_folder}/{dest_subfolder}".rstrip("/") if dest_subfolder else dest_folder
+
+    # Find source note via vector search (semantic match on the message)
+    source_path: str | None = None
+    if vector_store is not None:
+        try:
+            loop = asyncio.get_running_loop()
+            results = await loop.run_in_executor(None, vector_store.search, message, 3)
+            if results:
+                source_path = results[0].file_path
+        except Exception as exc:
+            logger.warning("executor: vector search for move source: %s", exc)
+
+    # Fallback: topic folder match
+    if source_path is None:
+        source_path = await _find_target_note(plan, message, None, index, config)
+
+    if source_path is None:
+        return "❌ Нотатку не знайдено. Уточніть тему або назву нотатки."
+
+    src = vault / source_path
+    if not src.exists():
+        return f"❌ Файл не знайдено: `{source_path}`"
+
+    # Path traversal guard
+    try:
+        (vault / full_dest).resolve().relative_to(vault.resolve())
+    except ValueError:
+        return "❌ Недопустимий шлях призначення."
+
+    dest_data_dir = vault / full_dest / "_data"
+    dest_data_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_data_dir / src.name
+    new_rel = f"{full_dest}/_data/{src.name}"
+
+    if dest.resolve() == src.resolve():
+        return "ℹ️ Нотатка вже знаходиться в цій папці."
+    if dest.exists():
+        return f"❌ Файл вже існує в папці призначення: `{new_rel}`"
+
+    # Move
+    src.rename(dest)
+    logger.info("executor: moved %s → %s", source_path, new_rel)
+
+    # Update vector store
+    if vector_store is not None:
+        try:
+            content = dest.read_text(encoding="utf-8")
+            vector_store.delete_note(source_path)
+            vector_store.upsert_note(new_rel, content)
+        except Exception as exc:
+            logger.warning("executor: vector store update after move: %s", exc)
+
+    # Update in-memory index
+    old_note = index.notes.pop(source_path, None)
+    if old_note is not None:
+        old_note.file_path = new_rel
+        old_note.folder = full_dest
+        index.notes[new_rel] = old_note
+        update_index(index, old_note)
+
+    # Create MOC in new folder and link the note
+    if config.enrichment_update_moc and old_note is not None:
+        try:
+            moc_path = create_moc_if_missing(dest_folder, config.vault.path)
+            update_moc(moc_path, new_rel, old_note.title, old_note.note_number, config.vault.path)
+        except Exception as exc:
+            logger.warning("executor: update_moc after move: %s", exc)
+
+    return f"✅ Переміщено:\n`{source_path}`\n→ `{new_rel}`"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

@@ -23,7 +23,7 @@ def build_application(config, index, stats, provider, vector_store=None) -> Appl
 
     # Command handlers
     from telegram.handlers.commands import (
-        cmd_help, cmd_idea, cmd_journal, cmd_mode,
+        cmd_help, cmd_idea, cmd_journal, cmd_mode, cmd_move,
         cmd_note, cmd_reindex, cmd_search, cmd_status, cmd_task,
     )
     app.add_handler(CommandHandler("note", cmd_note))
@@ -31,6 +31,7 @@ def build_application(config, index, stats, provider, vector_store=None) -> Appl
     app.add_handler(CommandHandler("idea", cmd_idea))
     app.add_handler(CommandHandler("journal", cmd_journal))
     app.add_handler(CommandHandler("search", cmd_search))
+    app.add_handler(CommandHandler("move", cmd_move))
     app.add_handler(CommandHandler("mode", cmd_mode))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("help", cmd_help))
