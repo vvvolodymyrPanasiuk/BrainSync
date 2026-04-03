@@ -274,11 +274,6 @@ def _heuristic_route(message: str) -> ActionPlan:
              "є нотатки про", "find notes", "search for"]):
         return _make_plan(Intent.SEARCH_VAULT, False, message)
 
-    # Move note commands
-    if _has(["перемісти нотатку", "перенеси нотатку", "переміщення нотатки",
-             "move note", "move to folder", "перемісти в папку", "перенеси в папку"]):
-        return _make_plan(Intent.MOVE_NOTE, False, message)
-
     # Chat / greetings
     if _has(["привіт", "вітаю", "добрий", "як справи", "дякую", "окей",
              "зрозуміло", "чудово", "бувай", "hello", "hey", "thanks",
