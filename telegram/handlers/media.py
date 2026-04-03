@@ -342,8 +342,8 @@ async def _route_and_execute(
     from vault_writer.tools.executor import execute
     from telegram.i18n import t
 
-    if provider is None:
-        return t("ai_unavailable")
+    if not context.bot_data.get("ai_ready", False):
+        return t("ai_not_ready")
 
     try:
         loop = asyncio.get_running_loop()

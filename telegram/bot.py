@@ -20,6 +20,7 @@ def build_application(config, index, stats, provider, vector_store=None) -> Appl
     app.bot_data["stats"] = stats
     app.bot_data["provider"] = provider
     app.bot_data["vector_store"] = vector_store
+    app.bot_data["ai_ready"] = False  # set True only after successful warmup in post_init
 
     # Command handlers
     from telegram.handlers.commands import (

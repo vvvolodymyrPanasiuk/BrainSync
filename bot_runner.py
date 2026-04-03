@@ -69,7 +69,9 @@ if sys.platform == "win32":
 # ── PTB lifecycle hooks ───────────────────────────────────────────────────────
 
 async def _ensure_infrastructure_ready(app) -> None:
-    """Post-init: download Whisper model, start vault indexing, notify online."""
+    """Post-init: load Whisper, start vault indexing, warm up AI, then notify online.
+    Online message is sent ONLY if AI is ready. Any failure sends an error instead.
+    """
     import telegram.handlers.media as _media_mod
     import asyncio as _asyncio
 
@@ -77,19 +79,23 @@ async def _ensure_infrastructure_ready(app) -> None:
     model_size = config.media.transcription_model
     allowed_ids = config.telegram.allowed_user_ids
 
-    # Whisper model cache check
+    async def _notify(text: str) -> None:
+        if allowed_ids:
+            try:
+                await app.bot.send_message(chat_id=allowed_ids[0], text=text)
+            except Exception as exc:
+                logger.warning("Could not send notice: %s", exc)
+
+    # ── Whisper ───────────────────────────────────────────────────────────────
     cache_root = Path.home() / ".cache" / "huggingface" / "hub"
     model_cached = (
         any(p.is_dir() for p in cache_root.glob("*") if model_size in p.name)
         if cache_root.exists() else False
     )
-    if not model_cached and allowed_ids:
+    if not model_cached:
         logger.info("Whisper model '%s' not cached — downloading…", model_size)
-        try:
-            from telegram.formatter import format_model_downloading
-            await app.bot.send_message(chat_id=allowed_ids[0], text=format_model_downloading())
-        except Exception as exc:
-            logger.warning("Could not send download notice: %s", exc)
+        from telegram.formatter import format_model_downloading
+        await _notify(format_model_downloading())
 
     from vault_writer.ai.transcriber import Transcriber
     transcriber = Transcriber(model_size=model_size)
@@ -99,14 +105,10 @@ async def _ensure_infrastructure_ready(app) -> None:
     _media_mod._READY = True
     logger.info("Whisper model ready: %s", model_size)
 
-    if allowed_ids:
-        try:
-            from telegram.formatter import format_model_ready
-            await app.bot.send_message(chat_id=allowed_ids[0], text=format_model_ready())
-        except Exception as exc:
-            logger.warning("Could not send ready notice: %s", exc)
+    from telegram.formatter import format_model_ready
+    await _notify(format_model_ready())
 
-    # Background vault indexing (non-blocking)
+    # ── Background vault indexing (non-blocking) ───────────────────────────────
     vector_store = app.bot_data.get("vector_store")
     if vector_store is not None:
         def _build():
@@ -118,56 +120,58 @@ async def _ensure_infrastructure_ready(app) -> None:
         threading.Thread(target=_build, daemon=True, name="vault-indexer").start()
         logger.info("Background vault indexing started")
 
-    # AI warmup — load model into memory before declaring ready
+    # ── AI warmup ─────────────────────────────────────────────────────────────
     provider = app.bot_data.get("provider")
-    if provider is not None and config.ai.provider == "ollama":
+
+    if provider is None:
+        # Provider failed to initialise at startup — bot cannot work
+        logger.error("AI provider not initialised — bot is not ready")
+        await _notify(
+            f"❌ BrainSync НЕ готовий — AI провайдер не вдалося ініціалізувати.\n"
+            f"Перевірте `config.yaml` (provider, model, api_key / ollama_url) і перезапустіть бота."
+        )
+        app.bot_data["ai_ready"] = False
+        return
+
+    if config.ai.provider == "ollama":
         logger.info(
             "AI warmup starting — provider=%s model=%s url=%s",
             config.ai.provider, config.ai.model, config.ai.ollama_url,
         )
-        if allowed_ids:
-            try:
-                await app.bot.send_message(
-                    chat_id=allowed_ids[0],
-                    text=f"⏳ Loading AI model `{config.ai.model}` into memory… (cold start, please wait)",
-                )
-            except Exception:
-                pass
+        await _notify(f"⏳ Loading AI model `{config.ai.model}` into memory… (cold start, please wait)")
         try:
             await loop.run_in_executor(None, provider.warmup)
             logger.info("AI warmup complete — model '%s' is ready", config.ai.model)
         except Exception as exc:
             logger.error("AI warmup failed: %s", exc)
-            if allowed_ids:
-                # Show available models so user knows what to put in config.yaml
-                available = []
-                try:
-                    available = await loop.run_in_executor(None, provider.list_models)
-                except Exception:
-                    pass
-                hint = (
-                    f"Available models: `{'`, `'.join(available)}`"
-                    if available else "Run `ollama list` to see available models."
-                )
-                msg = (
-                    f"❌ AI warmup failed for model `{config.ai.model}`:\n"
-                    f"`{exc}`\n\n"
-                    f"{hint}\n\n"
-                    f"Fix: set `ai.model` in `config.yaml` to a valid model name."
-                )
-                try:
-                    await app.bot.send_message(chat_id=allowed_ids[0], text=msg)
-                except Exception:
-                    pass
-
-    # Online notification — sent only after AI is ready
-    if allowed_ids:
-        from telegram.formatter import format_bot_online
-        for uid in allowed_ids:
+            available = []
             try:
-                await app.bot.send_message(chat_id=uid, text=format_bot_online())
-            except Exception as exc:
-                logger.warning("Online notice failed for %s: %s", uid, exc)
+                available = await loop.run_in_executor(None, provider.list_models)
+            except Exception:
+                pass
+            hint = (
+                f"Available models: `{'`, `'.join(available)}`"
+                if available else "Run `ollama list` to see available models."
+            )
+            await _notify(
+                f"❌ BrainSync НЕ готовий — AI не завантажився.\n"
+                f"Model: `{config.ai.model}`\n"
+                f"Error: `{exc}`\n\n"
+                f"{hint}\n\n"
+                f"Fix: set `ai.model` in `config.yaml` to a valid model name and restart."
+            )
+            app.bot_data["ai_ready"] = False
+            return
+
+    # ── All good — mark ready and send online notification ────────────────────
+    app.bot_data["ai_ready"] = True
+    logger.info("All infrastructure ready — sending online notification")
+    from telegram.formatter import format_bot_online
+    for uid in allowed_ids:
+        try:
+            await app.bot.send_message(chat_id=uid, text=format_bot_online())
+        except Exception as exc:
+            logger.warning("Online notice failed for %s: %s", uid, exc)
 
 
 async def _notify_shutdown(app) -> None:

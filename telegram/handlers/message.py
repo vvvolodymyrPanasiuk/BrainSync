@@ -49,9 +49,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     # ── AI required ───────────────────────────────────────────────────────────
-    if provider is None:
+    if not context.bot_data.get("ai_ready", False):
         from telegram.i18n import t
-        await _reply_with_retry(update, t("ai_unavailable"))
+        await _reply_with_retry(update, t("ai_not_ready"))
         return
 
     # ── AI Semantic Router ────────────────────────────────────────────────────
