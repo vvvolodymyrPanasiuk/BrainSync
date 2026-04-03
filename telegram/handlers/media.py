@@ -338,18 +338,19 @@ async def _route_and_execute(
     content_override: str | None = None,
 ) -> str:
     """Route text through AI semantic router and execute the resulting ActionPlan."""
-    from vault_writer.ai.router import route, _heuristic_route
+    from vault_writer.ai.router import route
     from vault_writer.tools.executor import execute
+    from telegram.i18n import t
 
-    if provider is not None:
-        try:
-            loop = asyncio.get_running_loop()
-            plan = await loop.run_in_executor(None, route, text, provider, index)
-        except Exception as exc:
-            logger.warning("media route failed (%s) — heuristic", exc)
-            plan = _heuristic_route(text)
-    else:
-        plan = _heuristic_route(text)
+    if provider is None:
+        return t("ai_unavailable")
+
+    try:
+        loop = asyncio.get_running_loop()
+        plan = await loop.run_in_executor(None, route, text, provider, index)
+    except Exception as exc:
+        logger.error("media route failed: %s", exc)
+        return t("ai_unavailable")
 
     # For media with content_override (PDFs), force create_note and inject override
     if content_override is not None:

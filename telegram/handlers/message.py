@@ -48,8 +48,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             _git_commit(result["file_path"], config)
         return
 
+    # ── AI required ───────────────────────────────────────────────────────────
+    if provider is None:
+        from telegram.i18n import t
+        await _reply_with_retry(update, t("ai_unavailable"))
+        return
+
     # ── AI Semantic Router ────────────────────────────────────────────────────
-    plan = await _route(text, provider, index)
+    try:
+        plan = await _route(text, provider, index)
+    except Exception as exc:
+        logger.error("routing failed: %s", exc)
+        from telegram.i18n import t
+        await _reply_with_retry(update, t("ai_unavailable"))
+        return
 
     # ── Executor ──────────────────────────────────────────────────────────────
     from vault_writer.tools.executor import execute
@@ -76,17 +88,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ── Routing ───────────────────────────────────────────────────────────────────
 
 async def _route(text: str, provider, index) -> object:
-    """Run AI router in executor; returns ActionPlan."""
-    from vault_writer.ai.router import route, _heuristic_route
-    if provider is None:
-        return _heuristic_route(text)
-    try:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, route, text, provider, index)
-    except Exception as exc:
-        logger.warning("_route failed (%s) — heuristic fallback", exc)
-        from vault_writer.ai.router import _heuristic_route
-        return _heuristic_route(text)
+    """Run AI router in executor. Raises on failure — caller handles the error."""
+    from vault_writer.ai.router import route
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, route, text, provider, index)
 
 
 # ── Legacy note creation (used by prefix path and /commands) ─────────────────

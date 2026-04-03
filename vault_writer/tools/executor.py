@@ -569,16 +569,10 @@ async def _find_target_note(plan: ActionPlan, message: str, vector_store, index,
 
 
 async def _re_route(message: str, provider, index) -> ActionPlan:
-    """Re-route a clarified message through the AI router."""
-    from vault_writer.ai.router import route, _heuristic_route
-    if provider is None:
-        return _heuristic_route(message)
-    try:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, route, message, provider, index)
-    except Exception as exc:
-        logger.warning("_re_route failed: %s", exc)
-        return _heuristic_route(message)
+    """Re-route a clarified message through the AI router. Raises on failure."""
+    from vault_writer.ai.router import route
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, route, message, provider, index)
 
 
 def _building_prefix(vector_store) -> str:

@@ -40,72 +40,13 @@ Reply with exactly one word: rag_query, search_query, chat, or new_note"""
 
 
 def classify_intent(message: str, provider) -> IntentType:
-    """Classify user message intent using AI. Falls back to heuristic on any error."""
-    try:
-        prompt = _INTENT_PROMPT.format(message=message)
-        response = provider.complete(prompt, max_tokens=20)
-        cleaned = response.strip().lower().split()[0] if response.strip() else ""
-        for intent in IntentType:
-            if intent.value == cleaned:
-                logger.debug("Intent classified: %s for message: %.50s", cleaned, message)
-                return intent
-        logger.debug("Unrecognised intent response %r — defaulting to new_note", response)
-        return IntentType.NEW_NOTE
-    except Exception as exc:
-        logger.warning("Intent classification failed (%s) — using heuristic fallback", exc)
-        return _heuristic_intent(message)
-
-
-def _heuristic_intent(message: str) -> IntentType:
-    """Rule-based intent classifier used when AI is unavailable."""
-    import re
-    text = message.strip().lower()
-
-    def _has(phrases: list[str]) -> bool:
-        """True if any phrase appears as a whole token (not inside another word)."""
-        for phrase in phrases:
-            # For multi-word phrases a simple substring is fine
-            if " " in phrase:
-                if phrase in text:
-                    return True
-            else:
-                # Single word: require word boundary
-                if re.search(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", text):
-                    return True
-        return False
-
-    # RAG: asking about own notes/vault
-    if _has([
-        "що я думав", "що я писав", "як я вирішував", "мої думки",
-        "мої нотатки", "у моїх нотатках", "розкажи про мої",
-        "що у мене є", "що є в сховищі", "що є у vault", "що є у сховищі",
-        "покажи мені vault", "покажи vault", "аналіз сховища",
-        "що містить сховище", "що є в моєму", "що в моєму сховищі",
-        "проаналізуй мої", "розкажи що є", "що є у мене",
-        "what did i think", "what did i write", "my notes",
-        "what's in my vault", "show my vault", "analyze my notes",
-    ]):
-        return IntentType.RAG_QUERY
-
-    # Search: explicit find/search request
-    if _has([
-        "знайди", "пошукай", "покажи все про", "є щось про", "є нотатки про",
-        "find notes", "search for", "show me notes",
-    ]):
-        return IntentType.SEARCH_QUERY
-
-    # Chat: greetings, questions to AI, short casual messages
-    if _has([
-        "привіт", "вітаю", "добрий день", "добрий ранок", "як справи",
-        "дякую", "окей", "зрозуміло", "чудово", "бувай",
-        "hello", "hey", "thanks", "thank you", "okay",
-        "не треба", "не записуй", "не зберігай",
-        "просто тест", "просто питання",
-    ]):
-        return IntentType.CHAT
-
-    # Short question → AI question, not worth saving
-    if text.endswith("?") and len(text) < 120:
-        return IntentType.CHAT
-
+    """Classify user message intent using AI. Raises on any error — no fallback."""
+    prompt = _INTENT_PROMPT.format(message=message)
+    response = provider.complete(prompt, max_tokens=20)
+    cleaned = response.strip().lower().split()[0] if response.strip() else ""
+    for intent in IntentType:
+        if intent.value == cleaned:
+            logger.debug("Intent classified: %s for message: %.50s", cleaned, message)
+            return intent
+    logger.debug("Unrecognised intent response %r — defaulting to new_note", response)
     return IntentType.NEW_NOTE
