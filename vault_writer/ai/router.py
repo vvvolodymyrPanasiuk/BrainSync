@@ -54,9 +54,11 @@ class ActionPlan:
     should_save: bool
     needs_web: bool
     needs_clarification: bool
-    note_type: str          # note | task | idea | journal
-    target_folder: str      # main topic folder
-    target_subfolder: str   # optional sub-topic (else "")
+    note_type: str              # note | task | idea | journal
+    general_category: str       # top-level category (Навчання, Бізнес, Особисте, etc.)
+    target_folder: str          # specific topic within category
+    target_subfolder: str       # narrower subtopic (or "")
+    section: str                # optional 4th-level section (or "")
     topic: str
     tags: list[str]
     summary: str
@@ -64,6 +66,7 @@ class ActionPlan:
     sources: list[str]
     reason: str
     title: str = ""
+    content: str = ""           # pre-formatted note body for save intents (or "")
 
 
 _ROUTER_SYSTEM = """\
@@ -78,15 +81,18 @@ Analyze the user message and return ONLY a JSON object with this exact structure
   "needs_web": <true|false>,
   "needs_clarification": <true|false>,
   "note_type": "<note|task|idea|journal>",
-  "target_folder": "<main topic folder name>",
-  "target_subfolder": "<sub-topic if any, else empty string>",
+  "general_category": "<high-level life area>",
+  "target_folder": "<specific topic within category>",
+  "target_subfolder": "<narrower subtopic, or empty string>",
+  "section": "<deepest optional section, or empty string>",
   "topic": "<topic in 1-3 words>",
   "tags": ["<tag1>", "<tag2>"],
   "summary": "<1 sentence summary>",
   "actions": ["<primary_action>"],
   "sources": [],
   "reason": "<1 sentence explanation>",
-  "title": "<short note title if creating a note, else empty string>"
+  "title": "<short note title if saving, else empty string>",
+  "content": "<formatted Obsidian markdown body if should_save=true, else empty string>"
 }
 
 ALLOWED INTENTS:
@@ -105,6 +111,23 @@ ALLOWED INTENTS:
 - ignore_spam: Random characters, obvious spam, noise. should_save=false.
 - manual_review: Sensitive/medical/legal content. should_save=false.
 
+FOLDER PATH STRUCTURE (notes stored as: general_category/target_folder[/target_subfolder][/section]/_data/note.md):
+- general_category: broad life domain — e.g. "Навчання", "Бізнес", "Особисте", "Проекти", "Здоров'я", "Фінанси", "Творчість"
+- target_folder: specific topic within category — e.g. "Програмування", "Трейдинг", "Кулінарія", "Спорт"
+- target_subfolder: narrower sub-area — e.g. "Python", "Індикатори", "Бокс" — use only when clearly applicable, else ""
+- section: even narrower level — e.g. "Алгоритми", "Основи" — use ONLY when strongly needed, else ""
+Minimum depth: 2 levels (general_category + target_folder). Maximum: 4 levels.
+
+CURRENT VAULT FOLDER STRUCTURE:
+{structure_hint}
+
+CONTENT FIELD RULES (for should_save=true intents):
+- "content" must be a well-formatted Obsidian markdown note body (NO frontmatter)
+- Use this template (adapt language to match user's message language):
+  ## Опис\n\n<detailed description>\n\n## Висновки\n\n<key conclusions or takeaways>\n\n## Посилання\n
+- Fill in the sections meaningfully based on the user's message
+- For non-save intents, "content" must be ""
+
 CRITICAL RULES:
 1. NOT every message should be saved. Only create_note/append_note/update_note/extract_structured_data → should_save=true.
 2. "Що у мене є?", "що є в сховищі?", "проаналізуй все" → analyze_vault, should_save=false.
@@ -113,8 +136,8 @@ CRITICAL RULES:
 5. Short questions ending in "?" about external knowledge (not vault) → chat_only.
 6. "Не записуй це", "просто питання", "не треба зберігати" → chat_only.
 7. If confidence < 0.55 and between create_note vs something else → request_clarification.
-8. target_folder: meaningful topic name in user's language matching content (e.g., "Програмування", "Здоров'я", "Фінанси", "Ідеї", "Programming").
-9. note_type: "task" for actionable items with verbs like "треба", "зробити", "купити"; "idea" for creative/speculative thoughts; "journal" for diary-style; "note" for everything else.
+8. note_type: "task" for actionable items with verbs like "треба", "зробити", "купити"; "idea" for creative/speculative thoughts; "journal" for diary-style; "note" for everything else.
+9. Prefer existing vault folders from VAULT FOLDER STRUCTURE above over creating new ones when content fits naturally.
 
 VAULT TOPICS AVAILABLE:
 {topics_hint}
@@ -178,8 +201,10 @@ def _extract_json(raw: str) -> dict:
 def route(message: str, provider, vault_index=None) -> ActionPlan:
     """Semantically route message via AI. Raises on any failure — no fallback."""
     topics_hint = _topics_hint(vault_index)
+    structure_hint = _structure_hint(vault_index)
     prompt = (
         _ROUTER_SYSTEM
+        .replace("{structure_hint}", structure_hint)
         .replace("{topics_hint}", topics_hint)
         .replace("{message}", message)
     )
@@ -211,6 +236,9 @@ def route(message: str, provider, vault_index=None) -> ActionPlan:
     if intent in _NO_SAVE_INTENTS:
         should_save = False
 
+    # content is only meaningful for save intents
+    content = str(data.get("content", "")) if should_save else ""
+
     plan = ActionPlan(
         intent=intent,
         confidence=float(data.get("confidence", 0.7)),
@@ -218,8 +246,10 @@ def route(message: str, provider, vault_index=None) -> ActionPlan:
         needs_web=bool(data.get("needs_web", False)),
         needs_clarification=bool(data.get("needs_clarification", False)),
         note_type=str(data.get("note_type", "note")),
+        general_category=str(data.get("general_category", "")) or "",
         target_folder=str(data.get("target_folder", "General")) or "General",
         target_subfolder=str(data.get("target_subfolder", "")),
+        section=str(data.get("section", "")),
         topic=str(data.get("topic", "General")),
         tags=list(data.get("tags", [])),
         summary=str(data.get("summary", "")),
@@ -227,17 +257,35 @@ def route(message: str, provider, vault_index=None) -> ActionPlan:
         sources=list(data.get("sources", [])),
         reason=str(data.get("reason", "")),
         title=str(data.get("title", "")) or message[:60],
+        content=content,
     )
 
     logger.info(
-        "router: intent=%s confidence=%.2f should_save=%s folder=%s | %s",
+        "router: intent=%s confidence=%.2f should_save=%s path=%s | %s",
         plan.intent.value, plan.confidence, plan.should_save,
-        plan.target_folder, plan.reason,
+        _full_path(plan), plan.reason,
     )
     return plan
+
+
+def _full_path(plan: ActionPlan) -> str:
+    """Build the folder path string for logging."""
+    parts = [p for p in [plan.general_category, plan.target_folder, plan.target_subfolder, plan.section] if p]
+    return "/".join(parts) if parts else plan.target_folder
 
 
 def _topics_hint(vault_index) -> str:
     if vault_index and vault_index.topics:
         return "Known topics: " + ", ".join(vault_index.topics[:25])
     return "No existing topics yet."
+
+
+def _structure_hint(vault_index) -> str:
+    if vault_index and vault_index.vault_path:
+        try:
+            from vault_writer.vault.structure import get_structure_hint
+            hint = get_structure_hint(vault_index.vault_path)
+            return hint
+        except Exception as exc:
+            logger.debug("_structure_hint failed: %s", exc)
+    return "No existing structure yet."

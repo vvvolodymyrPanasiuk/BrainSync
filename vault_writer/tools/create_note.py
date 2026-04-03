@@ -8,7 +8,7 @@ from vault_writer.ai.classifier import ClassificationResult, classify
 from vault_writer.ai.formatter import format_note
 from vault_writer.ai.provider import ProcessingMode
 from vault_writer.vault.indexer import VaultIndex, update_index
-from vault_writer.vault.writer import NoteType, VaultNote, create_moc_if_missing, update_moc, write_note
+from vault_writer.vault.writer import NoteType, VaultNote, create_moc_if_missing, create_mocs_for_path, update_moc, write_note
 from vault_writer.vault.writer import DATA_SUBFOLDER
 
 logger = logging.getLogger(__name__)
@@ -203,24 +203,28 @@ def handle_create_note_from_plan(
     }
     note_type = _type_map.get(plan.note_type, NoteType.NOTE)
 
+    # Build full 4-level folder path: GeneralCategory/Topic[/Subtopic][/Section]
+    general_category = getattr(plan, "general_category", "") or ""
     folder = plan.target_folder or "General"
     subfolder = plan.target_subfolder or ""
+    section = getattr(plan, "section", "") or ""
+    path_parts = [p for p in [general_category, folder, subfolder, section] if p]
+    full_folder = "/".join(path_parts) if path_parts else folder
     title = plan.title or text[:60]
-
-    # Build full folder path: Topic or Topic/Subtopic
-    full_folder = f"{folder}/{subfolder}".rstrip("/") if subfolder else folder
 
     classification = ClassificationResult(
         note_type=note_type,
         topic=plan.topic or folder,
         folder=full_folder,
-        parent_moc=f"0 {folder}.md",
+        parent_moc=f"0 {full_folder.split('/')[-1]}.md",
         title=title,
         confidence=plan.confidence,
     )
 
-    # ── Format ────────────────────────────────────────────────────────────────
-    if provider is not None and mode in (ProcessingMode.BALANCED, ProcessingMode.FULL):
+    # ── Format — use router-provided content first (avoids extra AI call) ─────
+    if getattr(plan, "content", ""):
+        content = plan.content
+    elif provider is not None and mode in (ProcessingMode.BALANCED, ProcessingMode.FULL):
         try:
             content = format_note(text, classification, provider, config)
         except Exception as exc:
@@ -232,8 +236,9 @@ def handle_create_note_from_plan(
     if content_override is not None:
         content = content_override
 
-    # ── Enrich ────────────────────────────────────────────────────────────────
-    if (content_override is None and provider is not None
+    # ── Enrich (skip if router already produced content, or content_override set) ─
+    router_provided = bool(getattr(plan, "content", ""))
+    if (content_override is None and not router_provided and provider is not None
             and mode == ProcessingMode.FULL and config.enrichment_add_wikilinks):
         try:
             from vault_writer.ai.enricher import add_wikilinks
@@ -243,15 +248,19 @@ def handle_create_note_from_plan(
 
     # ── Build VaultNote ───────────────────────────────────────────────────────
     tags = plan.tags or []
+    # Tag with general_category if present, else top-level folder
+    area_tag = (general_category or folder).lower()
     if not any(t.startswith("areas/") for t in tags):
-        tags = [f"areas/{folder.lower()}", f"types/{note_type.value}"] + tags
+        tags = [f"areas/{area_tag}", f"types/{note_type.value}"] + tags
 
+    # MOC link points to the innermost (most specific) folder name
+    innermost = full_folder.split("/")[-1] if full_folder else folder
     note = VaultNote(
         title=title,
         date=today,
-        categories=[folder],
+        categories=[general_category or folder],
         tags=tags,
-        moc=f"[[0 {folder}]]",
+        moc=f"[[0 {innermost}]]",
         content=content,
         file_path="",
         note_type=note_type,
@@ -267,13 +276,20 @@ def handle_create_note_from_plan(
         logger.error("write_note failed: %s", exc)
         return {"success": False, "error": str(exc)}
 
-    # ── MoC ───────────────────────────────────────────────────────────────────
+    # ── MoC (create at each folder level and link hierarchy) ─────────────────
     if config.enrichment_update_moc:
         try:
-            moc_path = create_moc_if_missing(folder, config.vault.path)
+            moc_path = create_mocs_for_path(full_folder, config.vault.path)
             update_moc(moc_path, file_path, note.title, note.note_number, config.vault.path)
         except Exception as exc:
             logger.warning("update_moc error: %s", exc)
+
+    # ── Register folder in vault structure index ──────────────────────────────
+    try:
+        from vault_writer.vault.structure import register_folder
+        register_folder(config.vault.path, full_folder)
+    except Exception as exc:
+        logger.debug("register_folder: %s", exc)
 
     # ── Index + Stats ─────────────────────────────────────────────────────────
     update_index(index, note)

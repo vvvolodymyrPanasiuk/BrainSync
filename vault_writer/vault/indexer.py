@@ -17,11 +17,12 @@ class VaultIndex:
     tags: set[str] = field(default_factory=set)
     total_notes: int = 0
     last_updated: datetime = field(default_factory=datetime.now)
+    vault_path: str = ""  # absolute path to vault root
 
 
 def build_index(vault_path: str) -> VaultIndex:
     """Walk vault directory, parse frontmatter of every .md, return VaultIndex."""
-    index = VaultIndex()
+    index = VaultIndex(vault_path=vault_path)
     vault = Path(vault_path)
     if not vault.is_dir():
         return index

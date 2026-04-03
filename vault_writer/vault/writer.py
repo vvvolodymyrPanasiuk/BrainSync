@@ -154,28 +154,73 @@ def update_moc(moc_path: str, note_path: str, note_title: str, note_number: int,
     full_moc.write_text(text, encoding="utf-8")
 
 
+def create_mocs_for_path(full_folder: str, vault_path: str) -> str:
+    """Create MOC files at every level of full_folder and link child MOCs in parent.
+    Returns vault-relative path of the innermost (most specific) MOC."""
+    parts = [p for p in full_folder.split("/") if p]
+    moc_paths: list[tuple[str, str]] = []  # (folder_name, moc_rel_path)
+
+    for i in range(len(parts)):
+        partial = "/".join(parts[: i + 1])
+        moc_rel = create_moc_if_missing(partial, vault_path)
+        moc_paths.append((parts[i], moc_rel))
+
+    # Link each child MOC in its parent's "Related MoC" section
+    for i in range(1, len(moc_paths)):
+        child_name, _child_moc = moc_paths[i]
+        _parent_name, parent_moc = moc_paths[i - 1]
+        _link_child_moc_in_parent(parent_moc, child_name, vault_path)
+
+    return moc_paths[-1][1] if moc_paths else ""
+
+
+def _link_child_moc_in_parent(parent_moc_path: str, child_name: str, vault_path: str) -> None:
+    """Append wikilink to child folder MOC under parent's 'Related MoC' section (idempotent)."""
+    vault = Path(vault_path)
+    full_moc = vault / parent_moc_path
+    if not full_moc.exists():
+        return
+    text = full_moc.read_text(encoding="utf-8")
+    link = f"- [[0 {child_name}]]"
+    if link in text:
+        return
+    marker = "## Related MoC"
+    if marker in text:
+        idx = text.index(marker) + len(marker)
+        newline_idx = text.find("\n", idx)
+        if newline_idx == -1:
+            newline_idx = len(text)
+        text = text[: newline_idx + 1] + link + "\n" + text[newline_idx + 1 :]
+    else:
+        text += f"\n{marker}\n{link}\n"
+    full_moc.write_text(text, encoding="utf-8")
+
+
 def create_moc_if_missing(topic: str, vault_path: str) -> str:
-    """Create MoC file for topic if it doesn't exist. Returns vault-relative path."""
+    """Create MoC file for topic (may be a nested path like 'Навчання/Програмування').
+    File is named after the last path component. Returns vault-relative path."""
     from datetime import date as _date
     vault = Path(vault_path)
     folder = vault / topic
     _assert_within_vault(folder, vault, topic)
     create_folder_if_missing(folder)
-    moc_file = folder / f"0 {topic}.md"
-    vault_rel = f"{topic}/0 {topic}.md"
+    # Use only the last component as the MOC filename (safe on all OSes)
+    folder_name = topic.split("/")[-1] if "/" in topic else topic
+    moc_file = folder / f"0 {folder_name}.md"
+    vault_rel = f"{topic}/0 {folder_name}.md"
     if not moc_file.exists():
         today = _date.today().isoformat()
         import yaml
         frontmatter_data = {
-            "title": topic,
+            "title": folder_name,
             "date": today,
-            "categories": [topic],
+            "categories": [folder_name],
             "tags": ["types/moc"],
             "MoC": "",
         }
         fm = "---\n" + yaml.dump(frontmatter_data, allow_unicode=True, default_flow_style=False).rstrip() + "\n---"
         body = (
-            f"\n# {topic}\n\n"
+            f"\n# {folder_name}\n\n"
             "## Description\n\n"
             "## 🔑 Main sections\n\n"
             "## Related MoC\n\n"
