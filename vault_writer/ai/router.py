@@ -190,6 +190,12 @@ def route(message: str, provider, vault_index=None) -> ActionPlan:
     _elapsed = _time.monotonic() - _t0
     logger.info("router: AI responded in %.1fs (%d chars)", _elapsed, len(raw))
     logger.debug("router: raw response: %.300s", raw)
+    if not raw or not raw.strip():
+        raise ValueError(
+            f"Model '{provider._model}' returned an empty response. "
+            "This model may not support non-streaming JSON output via Ollama. "
+            "Try a different model (e.g. mistral, llama3, qwen2.5)."
+        )
     data = _extract_json(raw)
 
     intent_str = data.get("intent", "create_note")

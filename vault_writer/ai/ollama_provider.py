@@ -65,6 +65,17 @@ class OllamaProvider(AIProvider):
                     f"Ollama 500 for model '{self._model}': {err_body}\n{hint}"
                 )
             response.raise_for_status()
+            content = response.json().get("message", {}).get("content", "")
+            if not content and content != "":
+                pass  # num_predict=1 may return empty on some models — that's OK
+            # Verify the model actually exists by checking the response is valid JSON
+            available = self.list_models()
+            if available and self._model not in available:
+                hint = f"Available models: {', '.join(available)}"
+                raise RuntimeError(
+                    f"Model '{self._model}' not found in Ollama.\n{hint}\n"
+                    f"Fix: set `ai.model` in `config.yaml` to one of the listed models."
+                )
             logger.info("Ollama warmup complete — model '%s' is ready", self._model)
         except requests.exceptions.ConnectionError as exc:
             raise RuntimeError(
