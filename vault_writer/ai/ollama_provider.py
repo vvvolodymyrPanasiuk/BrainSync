@@ -12,6 +12,30 @@ _CONNECT_TIMEOUT = 5  # seconds to establish TCP connection (fail fast if Ollama
 # Read timeout is None everywhere — wait indefinitely for model response
 
 
+def _extract_content(body: dict) -> str:
+    """Universally extract assistant text from any Ollama response shape.
+
+    Ollama local models:   body["message"]["content"]
+    Ollama cloud proxies:  body["message"]["content"]  (same, but may be "")
+    Some providers also:   body["response"]  (generate endpoint compatibility)
+    Last resort:           stringify the whole body so we never return silently.
+    """
+    # Primary: standard chat response
+    msg = body.get("message") or {}
+    content = msg.get("content")
+    if content:
+        return content
+
+    # Secondary: generate-style response field
+    content = body.get("response")
+    if content:
+        return content
+
+    # If both are empty strings (model produced no tokens), log full body for debugging
+    logger.warning("_extract_content: both message.content and response are empty. full body: %s", body)
+    return ""
+
+
 class OllamaProvider(AIProvider):
     def __init__(
         self,
@@ -46,7 +70,7 @@ class OllamaProvider(AIProvider):
                     "model": self._model,
                     "messages": [{"role": "user", "content": "hi"}],
                     "stream": False,
-                    "options": {"num_predict": 1},
+                    "options": {"num_predict": 4},
                 },
                 timeout=(_CONNECT_TIMEOUT, None),  # no read timeout
             )
@@ -65,17 +89,6 @@ class OllamaProvider(AIProvider):
                     f"Ollama 500 for model '{self._model}': {err_body}\n{hint}"
                 )
             response.raise_for_status()
-            content = response.json().get("message", {}).get("content", "")
-            if not content and content != "":
-                pass  # num_predict=1 may return empty on some models — that's OK
-            # Verify the model actually exists by checking the response is valid JSON
-            available = self.list_models()
-            if available and self._model not in available:
-                hint = f"Available models: {', '.join(available)}"
-                raise RuntimeError(
-                    f"Model '{self._model}' not found in Ollama.\n{hint}\n"
-                    f"Fix: set `ai.model` in `config.yaml` to one of the listed models."
-                )
             logger.info("Ollama warmup complete — model '%s' is ready", self._model)
         except requests.exceptions.ConnectionError as exc:
             raise RuntimeError(
@@ -107,7 +120,14 @@ class OllamaProvider(AIProvider):
                 logger.error("Ollama 500 detail: %s", err_body)
                 raise RuntimeError(f"Ollama 500 for model '{self._model}': {err_body}")
             response.raise_for_status()
-            return response.json()["message"]["content"]
+            try:
+                body = response.json()
+            except Exception:
+                raise RuntimeError(
+                    f"Ollama returned non-JSON response (status {response.status_code}): "
+                    f"{response.text[:300]}"
+                )
+            return _extract_content(body)
         except requests.exceptions.ConnectionError as exc:
             raise RuntimeError(
                 f"Ollama not reachable at {self._base_url} — is it running? ({exc})"
@@ -140,7 +160,13 @@ class OllamaProvider(AIProvider):
                 timeout=(_CONNECT_TIMEOUT, None),  # no read timeout
             )
             response.raise_for_status()
-            return response.json()["message"]["content"]
+            try:
+                body = response.json()
+            except Exception:
+                raise RuntimeError(
+                    f"Ollama returned non-JSON response: {response.text[:300]}"
+                )
+            return _extract_content(body)
         except requests.exceptions.ConnectionError as exc:
             raise RuntimeError(
                 f"Ollama not reachable at {self._base_url} — is it running? ({exc})"

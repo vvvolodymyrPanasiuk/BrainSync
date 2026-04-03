@@ -191,10 +191,11 @@ def route(message: str, provider, vault_index=None) -> ActionPlan:
     logger.info("router: AI responded in %.1fs (%d chars)", _elapsed, len(raw))
     logger.debug("router: raw response: %.300s", raw)
     if not raw or not raw.strip():
+        model = getattr(provider, "_model", "unknown")
         raise ValueError(
-            f"Model '{provider._model}' returned an empty response. "
-            "This model may not support non-streaming JSON output via Ollama. "
-            "Try a different model (e.g. mistral, llama3, qwen2.5)."
+            f"Model '{model}' returned an empty response to the router prompt. "
+            "The model may be ignoring the JSON instruction. "
+            "Try setting a larger max_tokens or use a different model."
         )
     data = _extract_json(raw)
 
