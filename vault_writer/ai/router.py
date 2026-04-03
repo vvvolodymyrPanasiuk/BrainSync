@@ -178,7 +178,11 @@ def _extract_json(raw: str) -> dict:
 def route(message: str, provider, vault_index=None) -> ActionPlan:
     """Semantically route message via AI. Raises on any failure — no fallback."""
     topics_hint = _topics_hint(vault_index)
-    prompt = _ROUTER_SYSTEM.format(message=message, topics_hint=topics_hint)
+    prompt = (
+        _ROUTER_SYSTEM
+        .replace("{topics_hint}", topics_hint)
+        .replace("{message}", message)
+    )
     import time as _time
     logger.info("router: sending to AI (message=%.60r)…", message)
     _t0 = _time.monotonic()
