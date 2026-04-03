@@ -70,7 +70,7 @@ class OllamaProvider(AIProvider):
                     "model": self._model,
                     "messages": [{"role": "user", "content": "hi"}],
                     "stream": False,
-                    "options": {"num_predict": 4},
+                    "options": {},
                 },
                 timeout=(_CONNECT_TIMEOUT, None),  # no read timeout
             )
@@ -108,7 +108,10 @@ class OllamaProvider(AIProvider):
                     "model": self._model,
                     "messages": [{"role": "user", "content": prompt}],
                     "stream": False,
-                    "options": {"num_predict": max_tokens},
+                    # num_predict: -1 = unlimited — required for thinking models
+                    # (e.g. kimi, qwen3, deepseek-r1) that spend tokens on <think> blocks
+                    # before producing the actual response content.
+                    "options": {},
                 },
                 timeout=(_CONNECT_TIMEOUT, None),  # no read timeout
             )
@@ -155,7 +158,7 @@ class OllamaProvider(AIProvider):
                         "images": [b64],
                     }],
                     "stream": False,
-                    "options": {"num_predict": max_tokens},
+                    "options": {},
                 },
                 timeout=(_CONNECT_TIMEOUT, None),  # no read timeout
             )
