@@ -58,9 +58,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         plan = await _route(text, provider, index)
     except Exception as exc:
-        logger.error("routing failed: %s", exc)
-        from telegram.i18n import t
-        await _reply_with_retry(update, t("ai_unavailable"))
+        logger.error("routing failed: %s", exc, exc_info=True)
+        await _reply_with_retry(update, f"❌ AI error: `{exc}`")
         return
 
     # ── Executor ──────────────────────────────────────────────────────────────

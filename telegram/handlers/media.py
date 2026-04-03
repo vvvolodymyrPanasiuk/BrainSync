@@ -349,8 +349,8 @@ async def _route_and_execute(
         loop = asyncio.get_running_loop()
         plan = await loop.run_in_executor(None, route, text, provider, index)
     except Exception as exc:
-        logger.error("media route failed: %s", exc)
-        return t("ai_unavailable")
+        logger.error("media route failed: %s", exc, exc_info=True)
+        return f"❌ AI error: `{exc}`"
 
     # For media with content_override (PDFs), force create_note and inject override
     if content_override is not None:
