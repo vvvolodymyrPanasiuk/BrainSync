@@ -25,21 +25,23 @@ _MAX_LINKS = 8             # max wikilinks injected per note
 _MIN_ALIAS_LEN = 3         # minimum alias length to use in search/replacement
 _MAX_RETROLINK = 30        # max existing notes updated per creation
 
-# Words too generic to serve as link anchors or index tokens
+# Grammatical stop-words only — prepositions, conjunctions, pronouns, auxiliary verbs.
+# These are words that will NEVER be note titles, so they are safe to exclude from
+# the inverted index and link anchors. Do NOT add topic/content words here — the AI
+# decides what is important via _extract_terms.
 _GENERIC_WORDS = frozenset({
+    # Ukrainian grammatical words
     "і", "й", "в", "у", "на", "з", "із", "зі", "що", "як", "до", "це", "не",
-    "та", "або", "але", "про", "від", "для", "по", "при", "також", "тому",
+    "та", "або", "але", "від", "для", "по", "при", "також", "тому",
     "якщо", "вже", "так", "є", "був", "була", "було", "були", "де", "хто",
     "ти", "я", "ми", "він", "вона", "воно", "вони", "який", "яка", "яке",
-    "які", "той", "той", "те", "ті", "цей", "ця", "ці", "його", "її", "їх",
+    "які", "той", "те", "ті", "цей", "ця", "ці", "його", "її", "їх",
     "коли", "між", "через", "після", "перед", "без", "крім", "щоб", "чи",
+    # English grammatical words
     "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
     "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
     "have", "has", "had", "do", "does", "did", "will", "would", "could",
     "should", "that", "this", "it", "its", "not", "as", "if", "then", "when",
-    # generic title words that don't identify a topic
-    "нотатки", "notes", "basics", "guide", "intro", "overview", "study",
-    "основи", "вступ", "навчання", "learning", "про", "about",
 })
 
 # Module-level inverted index cache: vault_path → word_dict
