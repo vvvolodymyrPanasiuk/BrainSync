@@ -27,9 +27,9 @@ def format_note(
         f"Type: {classification.note_type.value}\n"
         f"Topic: {classification.topic}\n"
         f"Folder: {classification.folder}\n"
-        f"Language: {config.vault.language}\n\n"
-        f"Format the following text as a structured Obsidian note body "
-        f"using these sections: ## Опис, ## Висновки, ## Посилання. "
+        f"Vault locale: {config.vault.language}\n\n"
+        f"Format the following text as a structured Obsidian note body with three sections: "
+        f"Description, Conclusions, Links — translated to the vault locale above. "
         f"Return only the markdown body, no frontmatter:\n\n{text}"
     )
 
