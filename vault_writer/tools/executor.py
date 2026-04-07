@@ -522,7 +522,7 @@ async def _move_note(
     if config.enrichment_update_moc and old_note is not None:
         try:
             moc_path = create_moc_if_missing(dest_folder, config.vault.path)
-            update_moc(moc_path, new_rel, old_note.title, old_note.note_number, config.vault.path)
+            update_moc(moc_path, new_rel, config.vault.path)
         except Exception as exc:
             logger.warning("executor: update_moc after move: %s", exc)
 

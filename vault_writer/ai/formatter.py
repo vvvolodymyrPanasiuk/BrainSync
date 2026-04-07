@@ -29,7 +29,7 @@ def format_note(
         f"Folder: {classification.folder}\n"
         f"Language: {config.vault.language}\n\n"
         f"Format the following text as a structured Obsidian note body "
-        f"(## Description, ## Conclusions, ## Links sections). "
+        f"using these sections: ## Опис, ## Висновки, ## Посилання. "
         f"Return only the markdown body, no frontmatter:\n\n{text}"
     )
 

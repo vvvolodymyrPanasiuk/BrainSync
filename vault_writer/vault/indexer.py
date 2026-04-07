@@ -72,10 +72,10 @@ def build_index(vault_path: str) -> VaultIndex:
         tags = fm.get("tags", []) or []
         note = VaultNote(
             title=title,
-            date=str(fm.get("date", "")),
+            date=str(fm.get("created", fm.get("date", ""))),   # 'created' (new) or 'date' (legacy)
             categories=fm.get("categories", []) or [],
             tags=tags if isinstance(tags, list) else [tags],
-            moc=fm.get("MoC", ""),
+            moc=fm.get("moc", fm.get("MoC", "")),              # 'moc' (new) or 'MoC' (legacy)
             content="",   # not loaded into index — read on demand
             file_path=rel,
             note_type=note_type,

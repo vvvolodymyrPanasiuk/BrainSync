@@ -1,9 +1,10 @@
-"""Vault writer: sequential note numbering, file creation, MoC updates."""
+"""Vault writer: datetime-based note naming, file creation, MoC updates."""
 from __future__ import annotations
 
 import logging
 import threading
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
@@ -83,9 +84,9 @@ def write_note(note: VaultNote, vault_path: str) -> str:
     """Write note to vault. Returns vault-relative file path. Thread-safe.
 
     New structure (use_data_subfolder=True):
-        Topic/_data/0001 Title.md
+        Topic/_data/YYYY-MM-DD HHmm Title.md
     Legacy structure (use_data_subfolder=False):
-        Topic/0001 Title.md
+        Topic/YYYY-MM-DD HHmm Title.md
     """
     with _write_lock:
         vault = Path(vault_path)
@@ -102,11 +103,18 @@ def write_note(note: VaultNote, vault_path: str) -> str:
             data_folder = topic_folder
             rel_data = note.folder
 
-        note.note_number = next_note_number(data_folder)
         safe_title = _sanitize_filename(note.title)
-        filename = f"{note.note_number:04d} {safe_title}.md"
-        note.file_path = f"{rel_data}/{filename}"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H%M")
+        filename = f"{timestamp} {safe_title}.md"
         full_path = data_folder / filename
+        # Resolve collisions (same minute + same title)
+        counter = 2
+        while full_path.exists():
+            filename = f"{timestamp} {safe_title} ({counter}).md"
+            full_path = data_folder / filename
+            counter += 1
+        note.note_number = counter - 1
+        note.file_path = f"{rel_data}/{filename}"
         _assert_within_vault(full_path, vault, note.file_path)
 
         frontmatter = _build_frontmatter(note)
@@ -120,31 +128,34 @@ def _build_frontmatter(note: VaultNote) -> str:
     import yaml
     data = {
         "title": note.title,
-        "date": note.date,
+        "created": note.date,           # ISO YYYY-MM-DD; 'created' matches Obsidian Properties panel
+        "aliases": [note.title],           # allows [[Note Title]] wikilinks without date prefix
         "categories": note.categories,
         "tags": note.tags,
-        "MoC": note.moc,
+        "moc": note.moc,               # lowercase matches Dataview field conventions
     }
     return "---\n" + yaml.dump(data, allow_unicode=True, default_flow_style=False).rstrip() + "\n---"
 
 
 def _default_body(note: VaultNote) -> str:
-    return "\n## Description\n\n\n## Conclusions\n\n\n## Links\n\n"
+    return "\n## Опис\n\n\n## Висновки\n\n\n## Посилання\n\n"
 
 
-def update_moc(moc_path: str, note_path: str, note_title: str, note_number: int, vault_path: str) -> None:
-    """Append wikilink to parent MoC under '## 🔑 Main sections'."""
+def update_moc(moc_path: str, note_path: str, vault_path: str) -> None:
+    """Append wikilink to parent MoC under '## Основні розділи'. Idempotent."""
     vault = Path(vault_path)
     full_moc = vault / moc_path
     _assert_within_vault(full_moc, vault, moc_path)
     if not full_moc.exists():
         return
     text = full_moc.read_text(encoding="utf-8")
-    link = f"- [[{note_number:04d} {note_title}]]"
-    marker = "## 🔑 Main sections"
+    note_stem = Path(note_path).stem   # filename without .md → used as wikilink target
+    link = f"- [[{note_stem}]]"
+    if link in text:                   # idempotent — skip if already present
+        return
+    marker = "## Основні розділи"
     if marker in text:
         idx = text.index(marker) + len(marker)
-        # Find end of that line, insert after it
         newline_idx = text.find("\n", idx)
         if newline_idx == -1:
             newline_idx = len(text)
@@ -184,7 +195,7 @@ def _link_child_moc_in_parent(parent_moc_path: str, child_name: str, vault_path:
     link = f"- [[0 {child_name}]]"
     if link in text:
         return
-    marker = "## Related MoC"
+    marker = "## Пов'язані MoC"
     if marker in text:
         idx = text.index(marker) + len(marker)
         newline_idx = text.find("\n", idx)
@@ -213,19 +224,20 @@ def create_moc_if_missing(topic: str, vault_path: str) -> str:
         import yaml
         frontmatter_data = {
             "title": folder_name,
-            "date": today,
+            "created": today,
+            "aliases": [],
             "categories": [folder_name],
             "tags": ["types/moc"],
-            "MoC": "",
+            "moc": "",
         }
         fm = "---\n" + yaml.dump(frontmatter_data, allow_unicode=True, default_flow_style=False).rstrip() + "\n---"
         body = (
             f"\n# {folder_name}\n\n"
-            "## Description\n\n"
-            "## 🔑 Main sections\n\n"
-            "## Related MoC\n\n"
-            "## Additional resources\n\n"
-            "## Conclusions\n"
+            "## Опис\n\n"
+            "## Основні розділи\n\n"
+            "## Пов'язані MoC\n\n"
+            "## Додаткові ресурси\n\n"
+            "## Висновки\n"
         )
         moc_file.write_text(fm + "\n" + body, encoding="utf-8")
     return vault_rel

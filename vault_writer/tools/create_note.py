@@ -99,21 +99,21 @@ def handle_create_note(
     if content_override is not None:
         content = content_override
 
-    # ── Enrich (full mode) ────────────────────────────────────────────────────
-    # Skip enrichment when content_override is set — sending 50 pages to AI is wasteful
+    # ── Enrich: semantic wikilinks (full mode) ────────────────────────────────
+    # Skip when content_override is set — sending 50 pages to AI for linking is wasteful
     if content_override is None and provider is not None and mode == ProcessingMode.FULL and config.enrichment_add_wikilinks:
         try:
-            from vault_writer.ai.enricher import add_wikilinks
-            content = add_wikilinks(content, index, config)
+            from vault_writer.ai.linker import enrich_with_links
+            content = enrich_with_links(content, index, vector_store, provider, config)
         except Exception as exc:
-            logger.warning("add_wikilinks error: %s — skipping enrichment", exc)
+            logger.warning("enrich_with_links error: %s — skipping", exc)
 
     # ── Build VaultNote ───────────────────────────────────────────────────────
     note = VaultNote(
         title=classification.title,
         date=today,
         categories=[classification.folder],
-        tags=[f"areas/{classification.folder.lower()}", f"types/{classification.note_type.value}"],
+        tags=[f"areas/{classification.folder.split('/')[0]}", f"types/{classification.note_type.value}"],
         moc=f"[[0 {classification.folder}]]",
         content=content,
         file_path="",           # filled by write_note
@@ -134,7 +134,7 @@ def handle_create_note(
     if config.enrichment_update_moc:
         try:
             moc_path = create_moc_if_missing(classification.folder, config.vault.path)
-            update_moc(moc_path, file_path, note.title, note.note_number, config.vault.path)
+            update_moc(moc_path, file_path, config.vault.path)
         except Exception as exc:
             logger.warning("update_moc error: %s", exc)
 
@@ -163,6 +163,14 @@ def handle_create_note(
         except Exception as exc:
             logger.warning("vector_store upsert/find_similar error: %s", exc)
 
+    # ── Retroactive linking: update existing notes that mention this new note ─
+    if config.enrichment_add_wikilinks and mode != ProcessingMode.MINIMAL:
+        try:
+            from vault_writer.ai.linker import retrolink_to_new_note
+            retrolink_to_new_note(note.title, file_path, config.vault.path, index, config)
+        except Exception as exc:
+            logger.warning("retrolink error: %s", exc)
+
     return {
         "success": True,
         "file_path": file_path,
@@ -175,7 +183,7 @@ def handle_create_note(
 
 
 def _default_body(text: str) -> str:
-    return f"## Description\n\n{text}\n\n## Conclusions\n\n## Links\n"
+    return f"## Опис\n\n{text}\n\n## Висновки\n\n## Посилання\n"
 
 
 def handle_create_note_from_plan(
@@ -236,20 +244,20 @@ def handle_create_note_from_plan(
     if content_override is not None:
         content = content_override
 
-    # ── Enrich (skip if router already produced content, or content_override set) ─
-    router_provided = bool(getattr(plan, "content", ""))
-    if (content_override is None and not router_provided and provider is not None
-            and mode == ProcessingMode.FULL and config.enrichment_add_wikilinks):
+    # ── Enrich: semantic wikilinks (full mode) ────────────────────────────────
+    # Run on ALL content including router-provided (router doesn't add cross-links).
+    # Skip only when content_override is set (PDFs — too large for linking).
+    if content_override is None and provider is not None and mode == ProcessingMode.FULL and config.enrichment_add_wikilinks:
         try:
-            from vault_writer.ai.enricher import add_wikilinks
-            content = add_wikilinks(content, index, config)
+            from vault_writer.ai.linker import enrich_with_links
+            content = enrich_with_links(content, index, vector_store, provider, config)
         except Exception as exc:
-            logger.warning("add_wikilinks error: %s — skipping", exc)
+            logger.warning("enrich_with_links error: %s — skipping", exc)
 
     # ── Build VaultNote ───────────────────────────────────────────────────────
     tags = plan.tags or []
-    # Tag with general_category if present, else top-level folder
-    area_tag = (general_category or folder).lower()
+    # Tag with general_category if present, else top-level folder (preserve casing)
+    area_tag = general_category or folder.split("/")[0]
     if not any(t.startswith("areas/") for t in tags):
         tags = [f"areas/{area_tag}", f"types/{note_type.value}"] + tags
 
@@ -280,7 +288,7 @@ def handle_create_note_from_plan(
     if config.enrichment_update_moc:
         try:
             moc_path = create_mocs_for_path(full_folder, config.vault.path)
-            update_moc(moc_path, file_path, note.title, note.note_number, config.vault.path)
+            update_moc(moc_path, file_path, config.vault.path)
         except Exception as exc:
             logger.warning("update_moc error: %s", exc)
 
@@ -312,6 +320,14 @@ def handle_create_note_from_plan(
             similarity_notices = [n for n in raw_notices if n.similarity >= rel_thr]
         except Exception as exc:
             logger.warning("vector_store error: %s", exc)
+
+    # ── Retroactive linking: update existing notes that mention this new note ─
+    if config.enrichment_add_wikilinks and mode != ProcessingMode.MINIMAL:
+        try:
+            from vault_writer.ai.linker import retrolink_to_new_note
+            retrolink_to_new_note(title, file_path, config.vault.path, index, config)
+        except Exception as exc:
+            logger.warning("retrolink error: %s", exc)
 
     return {
         "success": True,
