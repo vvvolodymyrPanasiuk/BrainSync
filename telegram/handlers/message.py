@@ -56,7 +56,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # ── AI Semantic Router ────────────────────────────────────────────────────
     try:
-        plan = await _route(text, provider, index)
+        plan = await _route(text, provider, index, config.vault.language)
     except Exception as exc:
         logger.error("routing failed: %s", exc, exc_info=True)
         await _reply_with_retry(update, f"❌ AI error: `{exc}`")
@@ -86,11 +86,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 # ── Routing ───────────────────────────────────────────────────────────────────
 
-async def _route(text: str, provider, index) -> object:
+async def _route(text: str, provider, index, locale: str = "en") -> object:
     """Run AI router in executor. Raises on failure — caller handles the error."""
     from vault_writer.ai.router import route
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, route, text, provider, index)
+    return await loop.run_in_executor(None, route, text, provider, index, locale)
 
 
 # ── Legacy note creation (used by prefix path and /commands) ─────────────────

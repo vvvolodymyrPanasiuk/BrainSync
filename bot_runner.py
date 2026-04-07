@@ -208,8 +208,8 @@ def main() -> None:
     set_locale(config.locale)
 
     logger.info(
-        "BrainSync starting — provider=%s mode=%s locale=%s",
-        config.ai.provider, config.ai.processing_mode, config.locale,
+        "BrainSync starting — provider=%s locale=%s",
+        config.ai.provider, config.locale,
     )
 
     # Vault index

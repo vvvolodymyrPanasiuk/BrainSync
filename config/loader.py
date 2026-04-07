@@ -14,11 +14,6 @@ if TYPE_CHECKING:
     pass
 
 
-# ── Enums (imported from their canonical locations after those modules exist) ──
-# ProcessingMode is defined in vault_writer/ai/provider.py
-# NoteType is defined in vault_writer/vault/writer.py
-# We import them lazily to avoid circular imports.
-
 
 # ── Dataclasses ───────────────────────────────────────────────────────────────
 
@@ -27,7 +22,6 @@ class AIConfig:
     provider: str
     model: str
     ollama_url: str
-    processing_mode: str           # raw string; cast to ProcessingMode by caller
     agents_file: str
     skills_path: str
     inject_vault_index: bool
@@ -156,10 +150,6 @@ def load_config(config_path: str) -> AppConfig:
     if provider not in ("anthropic", "ollama"):
         errors.append(f"ai.provider must be 'anthropic' or 'ollama', got: {provider!r}")
 
-    mode = ai_raw.get("processing_mode", "")
-    if mode not in ("minimal", "balanced", "full"):
-        errors.append(f"ai.processing_mode must be 'minimal'|'balanced'|'full', got: {mode!r}")
-
     api_key = ai_raw.get("api_key", "")
     if provider == "anthropic" and not api_key:
         errors.append("ai.api_key must not be empty when provider='anthropic'")
@@ -204,7 +194,6 @@ def load_config(config_path: str) -> AppConfig:
             provider=provider,
             model=ai_raw.get("model", "claude-sonnet-4-6"),
             ollama_url=ai_raw.get("ollama_url", "http://localhost:11434"),
-            processing_mode=mode,
             agents_file=ai_raw.get("agents_file", ".brain/AGENTS.md"),
             skills_path=ai_raw.get("skills_path", ".brain/skills/"),
             inject_vault_index=ai_raw.get("inject_vault_index", True),
@@ -310,11 +299,3 @@ def get_embedding_provider(config: AppConfig):
     return SentenceTransformersEmbedder(config.embedding.model)
 
 
-def update_processing_mode(config_path: str, mode: str) -> None:
-    """Safely rewrite config.yaml updating only ai.processing_mode. Preserves all other fields."""
-    path = Path(config_path)
-    with path.open("r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-    cfg.setdefault("ai", {})["processing_mode"] = mode
-    with path.open("w", encoding="utf-8") as f:
-        yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)

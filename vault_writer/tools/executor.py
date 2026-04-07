@@ -57,7 +57,7 @@ async def _execute_inner(
         logger.info("executor: resolving clarification with reply=%r", message[:80])
         context.user_data.pop(_CLARIFY_KEY, None)
         # Re-route the combined clarification context
-        plan = await _re_route(clarified_message, provider, index)
+        plan = await _re_route(clarified_message, provider, index, config.vault.language)
         intent = plan.intent
 
     if intent == Intent.ANSWER_FROM_VAULT:
@@ -568,11 +568,11 @@ async def _find_target_note(plan: ActionPlan, message: str, vector_store, index,
     return None
 
 
-async def _re_route(message: str, provider, index) -> ActionPlan:
+async def _re_route(message: str, provider, index, locale: str = "en") -> ActionPlan:
     """Re-route a clarified message through the AI router. Raises on failure."""
     from vault_writer.ai.router import route
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, route, message, provider, index)
+    return await loop.run_in_executor(None, route, message, provider, index, locale)
 
 
 def _building_prefix(vector_store) -> str:

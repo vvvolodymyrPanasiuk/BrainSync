@@ -35,6 +35,7 @@ def classify(
     prompt = (
         f"{agents_content}\n\n"
         f"{classifier_skill}\n\n"
+        f"Vault locale: {config.vault.language}\n"
         f"Known topics in vault: {topics_hint}\n\n"
         f"Classify this text and respond ONLY with valid JSON:\n\n{text}\n\n"
         'Respond with: {"type": "note|task|idea|journal", "topic": "...", '

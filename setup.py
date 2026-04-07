@@ -101,21 +101,6 @@ def main() -> None:
         ollama_vision_model = _ask("Ollama vision model (for photos)", "")
         print()
 
-    # ── Processing mode ───────────────────────────────────────────────────────
-    _hr()
-    print("\nStep 3/6 — Processing mode\n")
-    mode_idx = _pick(
-        "How much AI processing per note?",
-        [
-            "minimal  — classification only (fastest, 0–1 AI calls)",
-            "balanced — classification + content formatting (recommended, 1–2 calls)",
-            "full     — classification + formatting + auto wikilinks (slowest, 2–3 calls)",
-        ],
-        default=2,
-    )
-    processing_mode = ["minimal", "balanced", "full"][mode_idx - 1]
-    print(f"  ✓ Mode: {processing_mode}\n")
-
     # ── Telegram ──────────────────────────────────────────────────────────────
     _hr()
     print("\nStep 4/6 — Telegram bot\n")
@@ -176,7 +161,6 @@ def main() -> None:
         model=model,
         ollama_url=ollama_url,
         ollama_vision_model=ollama_vision_model,
-        processing_mode=processing_mode,
         git_enabled=git_enabled,
         git_push=git_push,
         embed_backend=embed_backend,
@@ -215,7 +199,6 @@ def _write_config(**kw) -> None:
             "model": kw["model"],
             "ollama_url": kw["ollama_url"],
             "ollama_vision_model": kw["ollama_vision_model"],
-            "processing_mode": kw["processing_mode"],
             "agents_file": ".brain/AGENTS.md",
             "skills_path": ".brain/skills/",
             "inject_vault_index": True,

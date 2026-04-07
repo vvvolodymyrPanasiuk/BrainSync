@@ -118,13 +118,17 @@ FOLDER PATH STRUCTURE (notes stored as: general_category/target_folder[/target_s
 - section: even narrower level — e.g. "Алгоритми", "Основи" — use ONLY when strongly needed, else ""
 Minimum depth: 2 levels (general_category + target_folder). Maximum: 4 levels.
 
+VAULT LOCALE: {locale}
+All note content (titles, section headers, body text) must be written in this locale.
+Communicate with the user in this locale as well.
+
 CURRENT VAULT FOLDER STRUCTURE:
 {structure_hint}
 
 CONTENT FIELD RULES (for should_save=true intents):
 - "content" must be a well-formatted Obsidian markdown note body (NO frontmatter)
-- Use this template (adapt language to match user's message language):
-  ## Опис\n\n<detailed description>\n\n## Висновки\n\n<key conclusions or takeaways>\n\n## Посилання\n
+- Use this template with section headers translated to VAULT LOCALE:
+  ## <Description>\n\n<detailed description>\n\n## <Conclusions>\n\n<key conclusions or takeaways>\n\n## <Links>\n
 - Fill in the sections meaningfully based on the user's message
 - For non-save intents, "content" must be ""
 
@@ -198,12 +202,13 @@ def _extract_json(raw: str) -> dict:
     raise ValueError(f"No JSON in response: {raw[:200]!r}")
 
 
-def route(message: str, provider, vault_index=None) -> ActionPlan:
+def route(message: str, provider, vault_index=None, locale: str = "en") -> ActionPlan:
     """Semantically route message via AI. Raises on any failure — no fallback."""
     topics_hint = _topics_hint(vault_index)
     structure_hint = _structure_hint(vault_index)
     prompt = (
         _ROUTER_SYSTEM
+        .replace("{locale}", locale)
         .replace("{structure_hint}", structure_hint)
         .replace("{topics_hint}", topics_hint)
         .replace("{message}", message)

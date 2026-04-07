@@ -153,23 +153,6 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(help_text)
 
 
-async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config = context.bot_data["config"]
-    if not auth_check(update, config):
-        return
-    mode = context.args[0].lower() if context.args else ""
-    if mode not in ("minimal", "balanced", "full"):
-        await update.message.reply_text("Режим: minimal | balanced | full")
-        return
-    try:
-        from config.loader import update_processing_mode
-        update_processing_mode(config.config_path, mode)
-        from telegram.formatter import format_mode_confirmation
-        await update.message.reply_text(format_mode_confirmation(mode))
-    except Exception as exc:
-        logger.error("cmd_mode error: %s", exc)
-        await update.message.reply_text(f"❌ Помилка зміни режиму: {exc}")
-
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config = context.bot_data["config"]

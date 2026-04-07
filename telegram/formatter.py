@@ -21,7 +21,6 @@ def format_search_results(results: list[dict], query: str) -> str:
 def format_status(config, stats, index) -> str:
     return (
         "📊 BrainSync Status\n\n"
-        f"Mode: {config.ai.processing_mode}\n"
         f"Provider: {config.ai.provider} ({config.ai.model})\n"
         f"Tokens: {stats.tokens_consumed:,}\n"
         f"Last note: {stats.last_note_path or '—'}\n"
@@ -29,10 +28,6 @@ def format_status(config, stats, index) -> str:
         f"Total notes: {stats.vault_notes_total}\n"
         f"Vault context: {index.total_notes} notes"
     )
-
-
-def format_mode_confirmation(mode: str) -> str:
-    return t("mode_changed", mode=mode)
 
 
 def format_ai_fallback(file_path: str) -> str:

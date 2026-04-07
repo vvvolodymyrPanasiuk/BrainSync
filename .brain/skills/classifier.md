@@ -4,26 +4,29 @@
 
 Analyze the input text and return a JSON classification with these fields:
 - `type`: one of `note`, `task`, `idea`, `journal`
-- `topic`: the main subject/domain (e.g., "Architecture", "Backend", "Redis")
-- `folder`: PascalCase vault folder name (e.g., "Architecture", "Tasks", "Ideas")
-- `parent_moc`: MoC filename (e.g., "0 Architecture.md")
-- `title`: concise 2–6 word title in the language of the input
+- `topic`: the main subject/domain (e.g., "Programming", "Trading")
+- `folder`: full vault folder path up to 4 levels (e.g., "Learning/Programming/Python")
+- `parent_moc`: MoC filename based on innermost folder (e.g., "0 Python.md")
+- `title`: concise 2–6 word title in the configured locale
 - `confidence`: float 0.0–1.0 (how confident in the classification)
+
+## Folder Path Structure
+
+Folders follow a hierarchy: `GeneralCategory/Topic[/Subtopic][/Section]`
+- **GeneralCategory**: broad life domain (e.g. "Learning", "Business", "Personal", "Projects", "Health", "Finance", "Creative")
+- **Topic**: specific subject within the category (e.g. "Programming", "Trading", "Cooking")
+- **Subtopic** (optional): narrower area (e.g. "Python", "Indicators", "Boxing")
+- **Section** (optional): even narrower (e.g. "Algorithms", "Basics")
+
+Minimum depth: 2 levels. Maximum: 4 levels. Use the minimum needed.
 
 ## Classification Rules
 
 ### Type Detection
-- **note**: Contains concepts, learnings, facts ("дізнався", "виявив", "розумію", "learned", "found")
-- **task**: Contains action items ("треба", "купити", "зробити", "need to", "buy", "fix", "implement")
-- **idea**: Contains proposals, hypotheses ("а що якщо", "можна було б", "what if", "maybe we could")
-- **journal**: Contains personal reflections, feelings, daily summaries ("сьогодні", "відчуваю", "today", "feel")
-
-### Folder Selection
-- Match to existing vault topics if possible (use the "Known topics" hint)
-- Use PascalCase: `Architecture`, `Backend`, `Frontend`, `DevOps`, `Tasks`, `Ideas`, `Journal`
-- Default folder: `General`
-- Tasks always go to `Tasks` folder
-- Journal entries go to `Journal` folder
+- **note**: Contains concepts, learnings, facts
+- **task**: Contains action items ("need to", "buy", "fix", "implement", "do")
+- **idea**: Contains proposals, hypotheses ("what if", "maybe we could", "idea:")
+- **journal**: Contains personal reflections, feelings, daily summaries
 
 ### Confidence Scoring
 - 0.9–1.0: Explicit command or very clear signal
@@ -35,5 +38,5 @@ Analyze the input text and return a JSON classification with these fields:
 
 Respond ONLY with valid JSON, no markdown, no explanation:
 ```json
-{"type": "note", "topic": "CQRS", "folder": "Architecture", "parent_moc": "0 Architecture.md", "title": "CQRS розділяє read write", "confidence": 0.92}
+{"type": "note", "topic": "CQRS", "folder": "Learning/Programming", "parent_moc": "0 Programming.md", "title": "CQRS separates read and write", "confidence": 0.92}
 ```

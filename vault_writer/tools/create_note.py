@@ -6,7 +6,6 @@ from datetime import date as _date
 
 from vault_writer.ai.classifier import ClassificationResult, classify
 from vault_writer.ai.formatter import format_note
-from vault_writer.ai.provider import ProcessingMode
 from vault_writer.vault.indexer import VaultIndex, update_index
 from vault_writer.vault.writer import NoteType, VaultNote, create_moc_if_missing, create_mocs_for_path, update_moc, write_note
 from vault_writer.vault.writer import DATA_SUBFOLDER
@@ -50,7 +49,6 @@ def handle_create_note(
         if limit and claude_code_session_tokens >= limit:
             return {"success": False, "error": f"Claude Code session token limit reached ({limit})"}
 
-    mode = ProcessingMode(config.ai.processing_mode)
     today = _date.today().isoformat()
 
     # ── Classify ──────────────────────────────────────────────────────────────
@@ -66,14 +64,13 @@ def handle_create_note(
             title=text[:60],
             confidence=1.0,
         )
-    elif provider is not None and mode != ProcessingMode.MINIMAL:
+    elif provider is not None:
         try:
             classification = classify(text, provider, index, config)
         except Exception as exc:
             logger.warning("classify error: %s — falling back to minimal", exc)
 
     if classification is None:
-        # Minimal fallback
         note_type = type_ or NoteType.NOTE
         folder_name = folder or "General"
         classification = ClassificationResult(
@@ -86,7 +83,7 @@ def handle_create_note(
         )
 
     # ── Format ────────────────────────────────────────────────────────────────
-    if provider is not None and mode in (ProcessingMode.BALANCED, ProcessingMode.FULL):
+    if provider is not None:
         try:
             content = format_note(text, classification, provider, config)
         except Exception as exc:
@@ -99,9 +96,9 @@ def handle_create_note(
     if content_override is not None:
         content = content_override
 
-    # ── Enrich: semantic wikilinks (full mode) ────────────────────────────────
+    # ── Enrich: semantic wikilinks ────────────────────────────────────────────
     # Skip when content_override is set — sending 50 pages to AI for linking is wasteful
-    if content_override is None and provider is not None and mode == ProcessingMode.FULL and config.enrichment_add_wikilinks:
+    if content_override is None and provider is not None and config.enrichment_add_wikilinks:
         try:
             from vault_writer.ai.linker import enrich_with_links
             content = enrich_with_links(content, index, vector_store, provider, config)
@@ -171,7 +168,7 @@ def handle_create_note(
             logger.warning("vector_store upsert/find_similar error: %s", exc)
 
     # ── Retroactive linking: update existing notes that mention this new note ─
-    if config.enrichment_add_wikilinks and mode != ProcessingMode.MINIMAL:
+    if config.enrichment_add_wikilinks:
         try:
             from vault_writer.ai.linker import retrolink_to_new_note
             retrolink_to_new_note(note.title, file_path, config.vault.path, index, config)
@@ -184,7 +181,6 @@ def handle_create_note(
         "note_type": classification.note_type.value,
         "folder": classification.folder,
         "title": note.title,
-        "mode_used": mode.value,
         "similarity_notices": similarity_notices,
     }
 
@@ -204,9 +200,6 @@ def handle_create_note_from_plan(
     content_override: str | None = None,
 ) -> dict:
     """Orchestrate note creation from a pre-built ActionPlan (from AI Router)."""
-    from vault_writer.ai.router import Intent
-
-    mode = ProcessingMode(config.ai.processing_mode)
     today = _date.today().isoformat()
 
     # Map router note_type string → NoteType enum
@@ -239,7 +232,7 @@ def handle_create_note_from_plan(
     # ── Format — use router-provided content first (avoids extra AI call) ─────
     if getattr(plan, "content", ""):
         content = plan.content
-    elif provider is not None and mode in (ProcessingMode.BALANCED, ProcessingMode.FULL):
+    elif provider is not None:
         try:
             content = format_note(text, classification, provider, config)
         except Exception as exc:
@@ -251,10 +244,10 @@ def handle_create_note_from_plan(
     if content_override is not None:
         content = content_override
 
-    # ── Enrich: semantic wikilinks (full mode) ────────────────────────────────
+    # ── Enrich: semantic wikilinks ────────────────────────────────────────────
     # Run on ALL content including router-provided (router doesn't add cross-links).
     # Skip only when content_override is set (PDFs — too large for linking).
-    if content_override is None and provider is not None and mode == ProcessingMode.FULL and config.enrichment_add_wikilinks:
+    if content_override is None and provider is not None and config.enrichment_add_wikilinks:
         try:
             from vault_writer.ai.linker import enrich_with_links
             content = enrich_with_links(content, index, vector_store, provider, config)
@@ -263,12 +256,10 @@ def handle_create_note_from_plan(
 
     # ── Build VaultNote ───────────────────────────────────────────────────────
     tags = plan.tags or []
-    # Tag with general_category if present, else top-level folder (preserve casing)
     area_tag = general_category or folder.split("/")[0]
     if not any(t.startswith("areas/") for t in tags):
         tags = [f"areas/{area_tag}", f"types/{note_type.value}"] + tags
 
-    # MOC link points to the innermost (most specific) folder name
     innermost = full_folder.split("/")[-1] if full_folder else folder
     note = VaultNote(
         title=title,
@@ -336,7 +327,7 @@ def handle_create_note_from_plan(
             logger.warning("vector_store error: %s", exc)
 
     # ── Retroactive linking: update existing notes that mention this new note ─
-    if config.enrichment_add_wikilinks and mode != ProcessingMode.MINIMAL:
+    if config.enrichment_add_wikilinks:
         try:
             from vault_writer.ai.linker import retrolink_to_new_note
             retrolink_to_new_note(title, file_path, config.vault.path, index, config)

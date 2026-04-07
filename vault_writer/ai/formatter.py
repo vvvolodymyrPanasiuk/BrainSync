@@ -37,7 +37,7 @@ def format_note(
         return provider.complete(prompt, max_tokens=800)
     except Exception as exc:
         logger.warning("format_note failed: %s — returning raw text", exc)
-        return f"## Description\n\n{text}\n\n## Conclusions\n\n## Links\n"
+        return f"## Опис\n\n{text}\n\n## Висновки\n\n## Посилання\n"
 
 
 def _read_file_safe(path: str) -> str:

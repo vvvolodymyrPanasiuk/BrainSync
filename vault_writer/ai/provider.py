@@ -1,14 +1,7 @@
-"""AIProvider abstract base class and ProcessingMode enum."""
+"""AIProvider abstract base class."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from enum import Enum
-
-
-class ProcessingMode(str, Enum):
-    MINIMAL  = "minimal"    # 0–1 AI calls: classify only (or skip if prefix given)
-    BALANCED = "balanced"   # 1–2 AI calls: classify + format
-    FULL     = "full"       # 2–3 AI calls: classify + format + enrich (wikilinks)
 
 
 class AIProvider(ABC):
