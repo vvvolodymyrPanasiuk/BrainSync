@@ -96,11 +96,11 @@ async def _execute_inner(
 
     # Save-type intents: CREATE_NOTE, EXTRACT_STRUCTURED, PARSE_DOCUMENT
     if intent in (Intent.CREATE_NOTE, Intent.EXTRACT_STRUCTURED, Intent.PARSE_DOCUMENT):
-        return await _save_note(message, plan, config, index, stats, provider, vector_store)
+        return await _save_note(message, plan, config, index, stats, provider, vector_store, context)
 
     # Fallback
     logger.warning("executor: unhandled intent %s — treating as create_note", intent.value)
-    return await _save_note(message, plan, config, index, stats, provider, vector_store)
+    return await _save_note(message, plan, config, index, stats, provider, vector_store, context)
 
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
@@ -415,6 +415,7 @@ async def _save_note(
     stats,
     provider,
     vector_store,
+    context=None,
 ) -> str:
     from vault_writer.tools.create_note import handle_create_note_from_plan
     from telegram.formatter import format_confirmation, format_similarity_notice
@@ -430,6 +431,17 @@ async def _save_note(
         notices = result.get("similarity_notices", [])
         if notices:
             reply += "\n\n" + format_similarity_notice(notices)
+            # Store pending merge for the first duplicate found
+            first_dup = next((n for n in notices if n.is_duplicate), None)
+            if first_dup and context is not None and context.user_data is not None:
+                context.user_data["pending_merge"] = {
+                    "new_path": result["file_path"],
+                    "duplicate_path": first_dup.matched_path,
+                }
+                logger.info(
+                    "executor: pending merge stored: %s ↔ %s",
+                    result["file_path"], first_dup.matched_path,
+                )
         return reply
     return f"❌ Error: {result.get('error', 'unknown error')}"
 

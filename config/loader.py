@@ -113,6 +113,8 @@ class SessionStats:
     last_note_path: str = ""
     notes_saved_today: int = 0
     vault_notes_total: int = 0
+    wikilinks_added_today: int = 0          # cross-links injected into notes today
+    topics_today: list = field(default_factory=list)  # folders written to today
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

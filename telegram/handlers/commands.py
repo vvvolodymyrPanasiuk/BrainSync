@@ -114,8 +114,10 @@ async def cmd_move(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         needs_web=False,
         needs_clarification=False,
         note_type="note",
+        general_category="",
         target_folder=dest_folder,
         target_subfolder="",
+        section="",
         topic=topic,
         tags=[],
         summary=topic,
@@ -134,6 +136,84 @@ async def cmd_move(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(reply, parse_mode="Markdown")
 
 
+async def cmd_merge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Merge the newly saved note with its detected duplicate."""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+
+    from telegram.i18n import t
+    pending = context.user_data.get("pending_merge") if context.user_data else None
+    if not pending:
+        await update.message.reply_text(t("merge_no_pending"))
+        return
+
+    new_path: str = pending["new_path"]
+    dup_path: str = pending["duplicate_path"]
+    context.user_data.pop("pending_merge", None)
+
+    from telegram.constants import ChatAction
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+    from pathlib import Path
+    vault = Path(config.vault.path)
+    new_file = vault / new_path
+    dup_file = vault / dup_path
+
+    if not new_file.exists() or not dup_file.exists():
+        await update.message.reply_text(t("merge_files_gone"))
+        return
+
+    try:
+        new_content = new_file.read_text(encoding="utf-8")
+        dup_content = dup_file.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.error("cmd_merge: read error: %s", exc)
+        await update.message.reply_text(t("merge_failed", error=str(exc)))
+        return
+
+    provider = context.bot_data.get("provider")
+    if provider is not None:
+        import asyncio
+        loop = asyncio.get_running_loop()
+        try:
+            merged = await loop.run_in_executor(
+                None, provider.complete,
+                "Merge these two similar notes into one comprehensive note. "
+                "Keep the frontmatter from NOTE 1 (existing). "
+                "Combine bodies, deduplicate content, preserve all unique information. "
+                "Return only the complete merged markdown:\n\n"
+                f"NOTE 1 (existing):\n{dup_content}\n\nNOTE 2 (new):\n{new_content}",
+            )
+        except Exception as exc:
+            logger.warning("cmd_merge: AI merge failed: %s — concatenating", exc)
+            merged = dup_content.rstrip() + "\n\n---\n\n" + new_content
+    else:
+        merged = dup_content.rstrip() + "\n\n---\n\n" + new_content
+
+    try:
+        dup_file.write_text(merged, encoding="utf-8")
+        new_file.unlink()
+
+        vector_store = context.bot_data.get("vector_store")
+        if vector_store is not None:
+            try:
+                vector_store.upsert_note(dup_path, merged)
+                vector_store.delete_note(new_path)
+            except Exception as exc:
+                logger.warning("cmd_merge: vector store update: %s", exc)
+
+        index = context.bot_data["index"]
+        index.notes.pop(new_path, None)
+
+        await update.message.reply_text(
+            t("merge_done", dest=dup_path, src=new_path), parse_mode="Markdown"
+        )
+    except Exception as exc:
+        logger.error("cmd_merge: write error: %s", exc)
+        await update.message.reply_text(t("merge_failed", error=str(exc)))
+
+
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config = context.bot_data["config"]
     if not auth_check(update, config):
@@ -146,7 +226,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/journal <текст> — запис у щоденник\n"
         "/search <запит> — пошук у vault\n"
         "/move <тема> -> <папка> — перемістити нотатку\n"
-        "/mode minimal|balanced|full — змінити режим\n"
+        "/merge — об'єднати нотатку з дублікатом\n"
         "/status — статус бота\n"
         "/help — ця довідка"
     )

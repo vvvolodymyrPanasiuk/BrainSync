@@ -80,6 +80,8 @@ def enrich_with_links(
             if note_path not in seen:
                 seen.add(note_path)
                 found.append((note_title, note_path, all_aliases))
+                # Update matched note's frontmatter aliases with newly discovered synonyms
+                _update_note_aliases(note_path, config.vault.path, all_aliases)
 
     if not found:
         return content
@@ -469,6 +471,60 @@ def _build_initial_inv(vault_path: str, vault_index) -> dict[str, list[str]]:
     _save_inv(vault_path, inv)
     logger.info("linker: initial inverted index built (%d words, %d notes)", len(inv), count)
     return inv
+
+
+# ── Alias frontmatter updater ─────────────────────────────────────────────────
+
+def _update_note_aliases(note_path: str, vault_path: str, new_aliases: list[str]) -> None:
+    """Add new_aliases to the note's frontmatter `aliases:` list (deduplicates, no-op if nothing new)."""
+    full_path = Path(vault_path) / note_path
+    if not full_path.exists():
+        return
+    try:
+        content = full_path.read_text(encoding="utf-8")
+        if not content.startswith("---"):
+            return
+        end = content.find("---", 3)
+        if end == -1:
+            return
+        fm_text = content[3:end]
+        body = content[end + 3:]
+
+        # Parse existing aliases: handles  aliases: [a, b, c]  (inline list)
+        alias_match = re.search(r'^aliases:\s*\[([^\]]*)\]', fm_text, re.MULTILINE)
+        if not alias_match:
+            return  # no aliases field — skip rather than mutate structure unexpectedly
+
+        existing_raw = alias_match.group(1)
+        existing: list[str] = [
+            a.strip().strip('"').strip("'")
+            for a in existing_raw.split(",")
+            if a.strip()
+        ]
+        existing_lower = {a.lower() for a in existing}
+
+        additions = [
+            a for a in new_aliases
+            if len(a) >= _MIN_ALIAS_LEN and a.lower() not in existing_lower
+        ]
+        if not additions:
+            return
+
+        merged = existing + additions
+        aliases_str = ", ".join(f'"{a}"' for a in merged)
+        new_fm_text = re.sub(
+            r'^aliases:\s*\[[^\]]*\]',
+            f'aliases: [{aliases_str}]',
+            fm_text,
+            flags=re.MULTILINE,
+        )
+        if new_fm_text == fm_text:
+            return
+
+        full_path.write_text(f"---{new_fm_text}---{body}", encoding="utf-8")
+        logger.debug("linker: aliases updated in %s: +%s", note_path, additions)
+    except Exception as exc:
+        logger.warning("linker: _update_note_aliases failed for %s: %s", note_path, exc)
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────

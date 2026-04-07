@@ -31,8 +31,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "error_prefix":       "❌ Error: {error}",
         "ai_unavailable":     "❌ AI provider is not responding. Check that Ollama is running and the model is loaded, or verify your API key.",
         "ai_not_ready":       "⚠️ BrainSync is not ready yet — AI failed to load on startup. Check the error message sent at startup and restart the bot.",
-        "duplicate_note":     "⚠️ Similar note already exists:\n→ {path} ({pct}%)",
+        "duplicate_note":     "⚠️ Similar note already exists:\n→ {path} ({pct}%)\n💡 Merge with it? /merge",
         "related_note":       "💡 Possibly related note:\n→ {path} ({pct}%)",
+        "merge_no_pending":   "No pending merge. Save a note first — if a duplicate is detected, /merge will be shown.",
+        "merge_done":         "✅ Merged into `{dest}`\nDeleted: `{src}`",
+        "merge_failed":       "❌ Merge failed: {error}",
+        "merge_files_gone":   "❌ Cannot merge: one of the files no longer exists.",
     },
     "uk": {
         "bot_online":         "🟢 BrainSync online — готовий до роботи.",
@@ -61,8 +65,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "error_prefix":       "❌ Помилка: {error}",
         "ai_unavailable":     "❌ AI провайдер не відповідає. Перевірте що Ollama запущений та модель завантажена, або правильність API ключа.",
         "ai_not_ready":       "⚠️ BrainSync ще не готовий — AI не завантажився при старті. Перегляньте повідомлення про помилку, яке прийшло при запуску, і перезапустіть бота.",
-        "duplicate_note":     "⚠️ Схожа нотатка вже існує:\n→ {path} ({pct}%)",
+        "duplicate_note":     "⚠️ Схожа нотатка вже існує:\n→ {path} ({pct}%)\n💡 Об'єднати? /merge",
         "related_note":       "💡 Можливо пов'язана нотатка:\n→ {path} ({pct}%)",
+        "merge_no_pending":   "Немає незавершеного об'єднання. Спочатку збережіть нотатку — якщо виявлено дублікат, з'явиться /merge.",
+        "merge_done":         "✅ Об'єднано у `{dest}`\nВидалено: `{src}`",
+        "merge_failed":       "❌ Помилка об'єднання: {error}",
+        "merge_files_gone":   "❌ Неможливо об'єднати: один із файлів більше не існує.",
     },
 }
 

@@ -101,7 +101,9 @@ def handle_create_note(
     if content_override is None and provider is not None and config.enrichment_add_wikilinks:
         try:
             from vault_writer.ai.linker import enrich_with_links
+            _pre = content
             content = enrich_with_links(content, index, vector_store, provider, config)
+            stats.wikilinks_added_today += content.count("[[") - _pre.count("[[")
         except Exception as exc:
             logger.warning("enrich_with_links error: %s — skipping", exc)
 
@@ -147,6 +149,8 @@ def handle_create_note(
     stats.last_note_path = file_path
     stats.notes_saved_today += 1
     stats.vault_notes_total = index.total_notes
+    if classification.folder not in stats.topics_today:
+        stats.topics_today.append(classification.folder)
 
     # ── Vector index + Similarity check ──────────────────────────────────────
     similarity_notices = []
@@ -250,7 +254,9 @@ def handle_create_note_from_plan(
     if content_override is None and provider is not None and config.enrichment_add_wikilinks:
         try:
             from vault_writer.ai.linker import enrich_with_links
+            _pre = content
             content = enrich_with_links(content, index, vector_store, provider, config)
+            stats.wikilinks_added_today += content.count("[[") - _pre.count("[[")
         except Exception as exc:
             logger.warning("enrich_with_links error: %s — skipping", exc)
 
@@ -309,6 +315,8 @@ def handle_create_note_from_plan(
     stats.last_note_path = file_path
     stats.notes_saved_today += 1
     stats.vault_notes_total = index.total_notes
+    if full_folder not in stats.topics_today:
+        stats.topics_today.append(full_folder)
 
     # ── Vector store ──────────────────────────────────────────────────────────
     similarity_notices = []
