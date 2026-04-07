@@ -1,10 +1,13 @@
 """Semantic wikilink injector: AI extracts key terms → vault search → inject [[links]].
 
-Flow:
+Flow for a new note:
   1. AI extracts named concepts + aliases from note content
-  2. Synonym registry is updated and loaded for term augmentation
-  3. Each term is matched against vault via title lookup then vector search
-  4. Matched notes are linked inline (first occurrence) AND in ## Посилання
+  2. Synonym registry (.brainsync/synonyms.json) is updated and loaded
+  3. Each term is matched against vault via token-based title lookup → vector fallback
+  4. Matched notes linked inline (first prose occurrence) AND in ## Посилання
+  5. Inverted index (.brainsync/word_index.json) is updated for future retrolinks
+  6. retrolink_to_new_note() finds existing notes mentioning the new note's title/aliases
+     using the inverted index (O(1) lookup instead of full vault scan)
 """
 from __future__ import annotations
 
@@ -15,15 +18,35 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Minimum vector similarity to accept a semantic match
-_VECTOR_THRESHOLD = 0.72
+# ── Constants ─────────────────────────────────────────────────────────────────
 
-# Maximum wikilinks to inject per note (to avoid noise)
-_MAX_LINKS = 8
+_VECTOR_THRESHOLD = 0.72   # minimum cosine similarity for vector match
+_MAX_LINKS = 8             # max wikilinks injected per note
+_MIN_ALIAS_LEN = 3         # minimum alias length to use in search/replacement
+_MAX_RETROLINK = 30        # max existing notes updated per creation
 
-# Minimum alias length to use in search/replacement (avoids "EF", "DB" etc false matches)
-_MIN_ALIAS_LEN = 3
+# Words too generic to serve as link anchors or index tokens
+_GENERIC_WORDS = frozenset({
+    "і", "й", "в", "у", "на", "з", "із", "зі", "що", "як", "до", "це", "не",
+    "та", "або", "але", "про", "від", "для", "по", "при", "також", "тому",
+    "якщо", "вже", "так", "є", "був", "була", "було", "були", "де", "хто",
+    "ти", "я", "ми", "він", "вона", "воно", "вони", "який", "яка", "яке",
+    "які", "той", "той", "те", "ті", "цей", "ця", "ці", "його", "її", "їх",
+    "коли", "між", "через", "після", "перед", "без", "крім", "щоб", "чи",
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "that", "this", "it", "its", "not", "as", "if", "then", "when",
+    # generic title words that don't identify a topic
+    "нотатки", "notes", "basics", "guide", "intro", "overview", "study",
+    "основи", "вступ", "навчання", "learning", "про", "about",
+})
 
+# Module-level inverted index cache: vault_path → word_dict
+_inv_cache: dict[str, dict[str, list[str]]] = {}
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
 
 def enrich_with_links(
     content: str,
@@ -35,70 +58,161 @@ def enrich_with_links(
 ) -> str:
     """Extract key terms from content, find matching vault notes, inject [[wikilinks]].
 
-    Adds [[Note Title]] both inline (first occurrence of each term/alias)
-    and in the ## Посилання footer section.
+    Adds [[Note Title]] both inline (first prose occurrence) and in ## Посилання.
     """
     if not content.strip() or provider is None:
         return content
 
-    # Step 1: AI extracts named concepts + their aliases/synonyms
     terms = _extract_terms(content, provider)
     if not terms:
         logger.debug("linker: no terms extracted")
         return content
-    logger.debug("linker: extracted %d terms: %s", len(terms), [t.get("term") for t in terms])
 
-    # Step 2: Persist synonyms for future runs
     registry_path = Path(config.vault.path) / ".brainsync" / "synonyms.json"
     _update_registry(registry_path, terms)
     registry = _load_registry(registry_path)
 
-    # Step 3: Match each term to a vault note
-    found_links: list[tuple[str, str, list[str]]] = []   # (note_title, note_path, all_aliases)
-    seen_paths: set[str] = set()
+    found: list[tuple[str, str, list[str]]] = []   # (note_title, note_path, aliases)
+    seen: set[str] = set()
     if exclude_path:
-        seen_paths.add(exclude_path)
+        seen.add(exclude_path)
 
     for term_info in terms:
-        if len(found_links) >= _MAX_LINKS:
+        if len(found) >= _MAX_LINKS:
             break
-
         term = term_info.get("term", "").strip()
         if not term:
             continue
-
-        ai_aliases = [a for a in term_info.get("aliases", []) if a]
-        registry_aliases = registry.get(term.lower(), [])
         all_aliases: list[str] = list(dict.fromkeys(
-            [term] + ai_aliases + registry_aliases   # deduplicated, insertion-ordered
+            [term]
+            + term_info.get("aliases", [])
+            + _load_registry(registry_path).get(term.lower(), [])
         ))
-
-        # Title match first (fast, no AI call)
         matched = _find_by_title(all_aliases, vault_index)
-
-        # Semantic vector search as fallback
         if matched is None and vector_store is not None:
             matched = _find_by_vector(term, vector_store, vault_index)
-
         if matched:
             note_title, note_path = matched
-            if note_path not in seen_paths:
-                seen_paths.add(note_path)
-                found_links.append((note_title, note_path, all_aliases))
+            if note_path not in seen:
+                seen.add(note_path)
+                found.append((note_title, note_path, all_aliases))
 
-    if not found_links:
-        logger.debug("linker: no matching notes found")
+    if not found:
         return content
 
-    logger.info("linker: injecting %d wikilinks", len(found_links))
-
-    # Step 4: Inject inline (first occurrence of term/alias in body)
-    result = _inject_inline(content, found_links)
-
-    # Step 5: Append to ## Посилання footer
-    result = _inject_footer(result, found_links)
-
+    logger.info("linker: injecting %d wikilinks", len(found))
+    result = _inject_inline(content, found)
+    result = _inject_footer(result, found)
     return result
+
+
+def update_inverted_index(note_path: str, content: str, vault_path: str) -> None:
+    """Index all significant words from note_path.
+
+    Called every time a note is written so the index stays current.
+    """
+    inv = _load_inv(vault_path)
+    words = {
+        w.lower() for w in re.findall(r"\w+", content)
+        if len(w) >= _MIN_ALIAS_LEN and w.lower() not in _GENERIC_WORDS
+    }
+    changed = False
+    for word in words:
+        paths = inv.setdefault(word, [])
+        if note_path not in paths:
+            paths.append(note_path)
+            changed = True
+    if changed:
+        _save_inv(vault_path, inv)
+
+
+def retrolink_to_new_note(
+    new_note_title: str,
+    new_note_path: str,
+    vault_path: str,
+    vault_index,
+    config,
+) -> int:
+    """After a new note is saved, find existing notes that mention its title/aliases
+    but don't have a wikilink yet, and inject [[new_note_title|mention]] into them.
+
+    Uses the inverted index for O(1) candidate lookup instead of a full vault scan.
+    Falls back to full scan once to build the index if it is empty.
+
+    Returns the number of notes updated.
+    """
+    registry_path = Path(vault_path) / ".brainsync" / "synonyms.json"
+    registry = _load_registry(registry_path)
+
+    # Build search terms: significant title words + their registry aliases
+    title_words = [
+        w for w in re.findall(r"\w+", new_note_title)
+        if w.lower() not in _GENERIC_WORDS and len(w) >= _MIN_ALIAS_LEN
+    ]
+    search_terms: list[str] = list(dict.fromkeys(
+        [new_note_title]
+        + title_words
+        + [alias for w in title_words for alias in registry.get(w.lower(), [])]
+    ))
+    search_terms = [t for t in search_terms if len(t) >= _MIN_ALIAS_LEN]
+    if not search_terms:
+        return 0
+
+    inv = _load_inv(vault_path)
+
+    # First run: inverted index is empty → build it once from existing vault
+    if not inv and vault_index:
+        logger.info("linker: building initial inverted index from vault…")
+        inv = _build_initial_inv(vault_path, vault_index)
+
+    # Candidate paths: only notes the index says contain one of our terms
+    candidates: set[str] = set()
+    for term in search_terms:
+        candidates.update(inv.get(term.lower(), []))
+    candidates.discard(new_note_path)
+
+    if not candidates:
+        return 0
+
+    vault = Path(vault_path)
+    updated = 0
+
+    for note_path in candidates:
+        if updated >= _MAX_RETROLINK:
+            break
+        full_path = vault / note_path
+        if not full_path.exists():
+            continue
+        try:
+            content = full_path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+
+        # Verify: term actually appears unlinked in the file
+        unlinked = None
+        for term in search_terms:
+            pat = r'(?<!\[)(?<!\|)\b' + re.escape(term) + r'\b(?!\])(?!\()'
+            if re.search(pat, content, re.IGNORECASE):
+                unlinked = term
+                break
+        if not unlinked:
+            continue
+
+        new_content = _inject_inline(content, [(new_note_title, new_note_path, search_terms)])
+        new_content = _inject_footer(new_content, [(new_note_title, new_note_path, search_terms)])
+        if new_content == content:
+            continue
+
+        try:
+            full_path.write_text(new_content, encoding="utf-8")
+            logger.info("retrolink: %s ← [[%s]] (matched %r)", note_path, new_note_title, unlinked)
+            updated += 1
+        except Exception as exc:
+            logger.warning("retrolink: write failed %s: %s", note_path, exc)
+
+    if updated:
+        logger.info("retrolink: updated %d note(s) with [[%s]]", updated, new_note_title)
+    return updated
 
 
 # ── Term extraction ───────────────────────────────────────────────────────────
@@ -108,33 +222,24 @@ def _extract_terms(content: str, provider) -> list[dict]:
     prompt = (
         "You are an Obsidian knowledge graph assistant.\n"
         "Extract named concepts from the text that are worth cross-linking in a personal vault.\n\n"
-        "INCLUDE:\n"
-        "- Technology names, frameworks, libraries, tools (e.g. EntityFrameworkCore, Redis, pytest)\n"
-        "- Programming languages, platforms, standards (e.g. Python, REST, OAuth2)\n"
-        "- Proper nouns: companies, projects, people, products\n"
-        "- Specific methodologies or named concepts (e.g. SOLID, CQRS, Zettelkasten)\n"
-        "- Scientific or domain terms (e.g. дофамін, маржа, HIIT)\n\n"
-        "EXCLUDE:\n"
-        "- Common everyday words (молоко, будинок, погода)\n"
-        "- Generic verbs and adjectives (зробити, великий, важливий)\n"
-        "- Vague concepts without a specific name (проблема, ідея, план)\n"
-        "- Pronouns, prepositions, articles\n\n"
-        "For each term, list ALL common aliases and abbreviations you know.\n\n"
+        "INCLUDE: technology names, frameworks, libraries, tools, programming languages, "
+        "platforms, standards, proper nouns (companies, projects, people, products), "
+        "specific named methodologies, scientific or domain terms.\n\n"
+        "EXCLUDE: common everyday words, generic verbs, basic adjectives, food items, "
+        "vague concepts without a specific name (problem, idea, plan, thing).\n\n"
+        "For each term list ALL common aliases and abbreviations you know.\n\n"
         "Return ONLY a valid JSON array, no explanation:\n"
-        '[{"term": "EntityFrameworkCore", "aliases": ["EF Core", "EFCore", "Entity Framework", "EF"]}]\n\n'
+        '[{"term": "EntityFrameworkCore", "aliases": ["EF Core", "EFCore", "EF"]}]\n\n'
         f"Text:\n{content[:2500]}"
     )
     try:
         raw = provider.complete(prompt, max_tokens=700)
-        # Strip thinking blocks (Qwen3, DeepSeek)
         raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-        json_start = raw.find("[")
-        json_end = raw.rfind("]") + 1
-        if json_start == -1 or json_end <= json_start:
-            logger.debug("linker: no JSON array in extraction response")
+        j_start = raw.find("[")
+        j_end = raw.rfind("]") + 1
+        if j_start == -1 or j_end <= j_start:
             return []
-        data = json.loads(raw[json_start:json_end])
-        return [d for d in data if isinstance(d, dict) and d.get("term")]
+        return [d for d in json.loads(raw[j_start:j_end]) if isinstance(d, dict) and d.get("term")]
     except Exception as exc:
         logger.warning("linker: _extract_terms failed: %s", exc)
         return []
@@ -143,27 +248,43 @@ def _extract_terms(content: str, provider) -> list[dict]:
 # ── Vault matching ────────────────────────────────────────────────────────────
 
 def _find_by_title(aliases: list[str], vault_index) -> tuple[str, str] | None:
-    """Case-insensitive title match: alias == note title OR alias is contained in title."""
-    alias_lower = {a.lower() for a in aliases if len(a) >= _MIN_ALIAS_LEN}
-    if not alias_lower:
-        return None
+    """Token-based title match: avoids substring false-positives like 'EF' → 'EntityFramework'.
+
+    Rules:
+    - Exact full-string match → always accepted
+    - Multi-token alias (≥2 words): all tokens must be in the title's token set
+    - Single-token alias (≥4 chars): token must be an exact word in the title
+    """
     for path, note in vault_index.notes.items():
         title_lower = note.title.lower()
-        for alias in alias_lower:
-            # Exact match
-            if alias == title_lower:
+        title_tokens = set(re.findall(r"\w+", title_lower))
+
+        for alias in aliases:
+            alias_lower = alias.lower().strip()
+            if not alias_lower:
+                continue
+            alias_tokens = set(re.findall(r"\w+", alias_lower))
+            if not alias_tokens:
+                continue
+
+            # Exact full match
+            if alias_lower == title_lower:
                 return (note.title, path)
-            # Alias is a significant substring of the title (and long enough)
-            if len(alias) >= 4 and alias in title_lower:
+
+            # Multi-word alias: require all tokens in title
+            if len(alias_tokens) >= 2 and alias_tokens.issubset(title_tokens):
                 return (note.title, path)
-            # Title is contained within alias (e.g. alias="EntityFrameworkCore", title="EFCore")
-            if len(title_lower) >= 4 and title_lower in alias:
-                return (note.title, path)
+
+            # Single-word alias: must be a whole token AND long enough to be specific
+            if len(alias_tokens) == 1:
+                token = next(iter(alias_tokens))
+                if len(token) >= 4 and token in title_tokens:
+                    return (note.title, path)
     return None
 
 
 def _find_by_vector(term: str, vector_store, vault_index) -> tuple[str, str] | None:
-    """Semantic search: find the most similar note to the term."""
+    """Semantic vector search: returns best match above similarity threshold."""
     try:
         results = vector_store.search(term, top_k=1)
         if not results:
@@ -184,80 +305,108 @@ def _find_by_vector(term: str, vector_store, vault_index) -> tuple[str, str] | N
 # ── Link injection ────────────────────────────────────────────────────────────
 
 def _inject_inline(content: str, links: list[tuple[str, str, list[str]]]) -> str:
-    """Replace the first occurrence of each term/alias in the body with [[Title|alias]].
+    """Replace first unlinked prose occurrence of each term/alias with [[Title|alias]].
 
-    Skips: existing [[wikilinks]], code blocks, section headers.
+    Protected zones (never modified):
+    - YAML frontmatter
+    - Fenced code blocks  ```...```
+    - Inline code  `...`
+    - Markdown heading lines  ## ...
+    - Existing wikilinks  [[...]]
     """
-    # Split frontmatter out to avoid linking inside YAML
     body, frontmatter = _split_frontmatter(content)
 
-    # Build a set of ranges that are already inside [[ ]] to avoid double-linking
     result = body
     for note_title, _path, aliases in links:
-        # Try each alias from longest to shortest (avoids partial-word false positives)
         candidates = sorted(
             (a for a in aliases if len(a) >= _MIN_ALIAS_LEN),
             key=len,
             reverse=True,
         )
         for alias in candidates:
-            # Pattern: word boundary, not already inside [[ ]] or Markdown link syntax
             pattern = (
-                r'(?<!\[)'          # not preceded by [
-                r'(?<!\|)'          # not preceded by | (already inside [[X|...]])
+                r'(?<!\[)'           # not preceded by [
+                r'(?<!\|)'           # not preceded by | (inside wikilink)
                 r'\b(' + re.escape(alias) + r')\b'
-                r'(?!\])'           # not followed by ]
-                r'(?!\()'           # not followed by ( (Markdown link)
+                r'(?!\])'            # not followed by ]
+                r'(?!\()'            # not followed by ( (Markdown link)
             )
-            replacement = f'[[{note_title}|{alias}]]'
-            new_result = re.sub(pattern, replacement, result, count=1, flags=re.IGNORECASE)
+            new_result = _replace_first_in_prose(
+                result, pattern, f'[[{note_title}|{alias}]]'
+            )
             if new_result != result:
                 result = new_result
-                break  # only one inline link per note
+                break   # one inline link per matched note
 
     return (frontmatter + result) if frontmatter else result
 
 
+def _replace_first_in_prose(text: str, pattern: str, replacement: str) -> str:
+    """Replace the first regex match that is NOT inside a code block or heading line."""
+    # re.split with a capturing group gives alternating [prose, code, prose, code, ...]
+    # Odd-indexed segments are code spans/blocks — leave them untouched.
+    segments = re.split(r'(```[\s\S]*?```|`[^`\n]+`)', text)
+
+    replaced = False
+    result_parts: list[str] = []
+
+    for i, segment in enumerate(segments):
+        if replaced or i % 2 == 1:
+            # Code block/span or already replaced → preserve as-is
+            result_parts.append(segment)
+            continue
+
+        # Prose segment: process line by line, skip heading lines
+        lines = segment.split("\n")
+        new_lines: list[str] = []
+        for line in lines:
+            if not replaced and not re.match(r"^\s*#{1,6}\s", line):
+                new_line = re.sub(pattern, replacement, line, count=1, flags=re.IGNORECASE)
+                if new_line != line:
+                    replaced = True
+                new_lines.append(new_line)
+            else:
+                new_lines.append(line)
+        result_parts.append("\n".join(new_lines))
+
+    return "".join(result_parts)
+
+
 def _inject_footer(content: str, links: list[tuple[str, str, list[str]]]) -> str:
-    """Append [[Note Title]] entries to ## Посилання section (deduplicated)."""
-    links_section = "## Посилання"
-
-    # Collect titles not already present in content
-    new_entries: list[str] = []
-    for note_title, _path, _aliases in links:
-        link_text = f"- [[{note_title}]]"
-        if link_text not in content:
-            new_entries.append(link_text)
-
+    """Append [[Note Title]] entries to ## Посилання (deduplicated)."""
+    new_entries = [
+        f"- [[{title}]]"
+        for title, _, _ in links
+        if f"- [[{title}]]" not in content
+    ]
     if not new_entries:
         return content
 
-    new_links_block = "\n".join(new_entries)
-
-    if links_section in content:
-        idx = content.index(links_section) + len(links_section)
-        newline_idx = content.find("\n", idx)
-        if newline_idx == -1:
-            return content + "\n" + new_links_block
-        return content[:newline_idx + 1] + new_links_block + "\n" + content[newline_idx + 1:]
-
-    return content + f"\n\n{links_section}\n\n{new_links_block}\n"
+    block = "\n".join(new_entries)
+    marker = "## Посилання"
+    if marker in content:
+        idx = content.index(marker) + len(marker)
+        nl = content.find("\n", idx)
+        if nl == -1:
+            return content + "\n" + block
+        return content[:nl + 1] + block + "\n" + content[nl + 1:]
+    return content + f"\n\n{marker}\n\n{block}\n"
 
 
 # ── Synonym registry ──────────────────────────────────────────────────────────
 
 def _update_registry(registry_path: Path, terms: list[dict]) -> None:
-    """Merge newly discovered aliases into the persistent synonym registry."""
+    """Merge newly discovered term aliases into the persistent synonym registry."""
     registry = _load_registry(registry_path)
     changed = False
     for item in terms:
-        term_key = item.get("term", "").lower()
-        new_aliases = [a.lower() for a in item.get("aliases", []) if a]
-        if term_key and new_aliases:
-            existing = set(registry.get(term_key, []))
+        key = item.get("term", "").lower().strip()
+        new_aliases = [a.lower().strip() for a in item.get("aliases", []) if a]
+        if key and new_aliases:
+            existing = set(registry.get(key, []))
             merged = existing | set(new_aliases)
             if merged != existing:
-                registry[term_key] = sorted(merged)
+                registry[key] = sorted(merged)
                 changed = True
     if changed:
         try:
@@ -266,127 +415,82 @@ def _update_registry(registry_path: Path, terms: list[dict]) -> None:
                 json.dumps(registry, ensure_ascii=False, indent=2, sort_keys=True),
                 encoding="utf-8",
             )
-            logger.debug("linker: synonym registry updated (%d terms)", len(registry))
         except Exception as exc:
-            logger.warning("linker: could not save synonym registry: %s", exc)
+            logger.warning("linker: registry save failed: %s", exc)
 
 
 def _load_registry(registry_path: Path) -> dict[str, list[str]]:
-    """Load synonym registry from disk. Returns {} on any error."""
+    """Load synonym registry, normalising all keys to lowercase."""
     try:
         if registry_path.exists():
-            return json.loads(registry_path.read_text(encoding="utf-8"))
+            raw = json.loads(registry_path.read_text(encoding="utf-8"))
+            return {k.lower(): v for k, v in raw.items()}
     except Exception as exc:
         logger.debug("linker: registry load failed: %s", exc)
     return {}
 
 
-# ── Retroactive linking ──────────────────────────────────────────────────────
+# ── Inverted index ────────────────────────────────────────────────────────────
 
-# Short words that are too generic to use as search anchors
-_GENERIC_WORDS = frozenset({
-    "і", "й", "в", "у", "на", "з", "що", "як", "до", "це", "не", "та",
-    "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "of",
-    "by", "is", "are", "was", "with", "from",
-    # generic nouns that appear in many note titles
-    "нотатки", "notes", "basics", "guide", "intro", "основи", "вступ",
-    "overview", "study", "навчання", "learning",
-})
+_INV_FILE = ".brainsync/word_index.json"
 
 
-def retrolink_to_new_note(
-    new_note_title: str,
-    new_note_path: str,
-    vault_path: str,
-    vault_index,
-    config,
-) -> int:
-    """After a new note is written, scan existing vault notes for unlinked mentions
-    of the new note's title / known aliases and inject [[new_note_title|mention]] links.
+def _load_inv(vault_path: str) -> dict[str, list[str]]:
+    """Load inverted index from module cache → disk. Returns mutable dict."""
+    if vault_path in _inv_cache:
+        return _inv_cache[vault_path]
+    path = Path(vault_path) / _INV_FILE
+    try:
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            _inv_cache[vault_path] = data
+            return data
+    except Exception as exc:
+        logger.debug("linker: inverted index load failed: %s", exc)
+    _inv_cache[vault_path] = {}
+    return _inv_cache[vault_path]
 
-    Example: when 'SQLite Basics' is created, every existing note that says
-    'SQLite' gets '[[SQLite Basics|SQLite]]' injected automatically.
 
-    Returns the number of notes updated.
-    """
-    registry_path = Path(vault_path) / ".brainsync" / "synonyms.json"
-    registry = _load_registry(registry_path)
+def _save_inv(vault_path: str, data: dict) -> None:
+    """Persist inverted index to disk and update cache."""
+    path = Path(vault_path) / _INV_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        _inv_cache[vault_path] = data
+    except Exception as exc:
+        logger.warning("linker: inverted index save failed: %s", exc)
 
-    # Build search terms from significant title words + registry aliases
-    title_words = [
-        w for w in re.findall(r"\w+", new_note_title)
-        if w.lower() not in _GENERIC_WORDS and len(w) >= _MIN_ALIAS_LEN
-    ]
 
-    search_terms: list[str] = list(dict.fromkeys(
-        [new_note_title]
-        + title_words
-        + [alias for word in title_words for alias in registry.get(word.lower(), [])]
-    ))
-    search_terms = [t for t in search_terms if len(t) >= _MIN_ALIAS_LEN]
-
-    if not search_terms:
-        return 0
-
+def _build_initial_inv(vault_path: str, vault_index) -> dict[str, list[str]]:
+    """One-time full vault scan to build the inverted index from existing notes."""
     vault = Path(vault_path)
-    updated = 0
-    _MAX_RETROLINK_UPDATES = 30  # safety cap per note creation
-
-    for note_path, _note in list(vault_index.notes.items()):
-        if updated >= _MAX_RETROLINK_UPDATES:
-            break
-        if note_path == new_note_path:
+    inv: dict[str, list[str]] = {}
+    count = 0
+    for note_path in vault_index.notes:
+        fp = vault / note_path
+        if not fp.exists():
             continue
-
-        full_path = vault / note_path
-        if not full_path.exists():
-            continue
-
         try:
-            content = full_path.read_text(encoding="utf-8")
+            content = fp.read_text(encoding="utf-8")
         except Exception:
             continue
-
-        # Fast check: any term appears in content but is NOT already a wikilink?
-        unlinked_term: str | None = None
-        for term in search_terms:
-            # Matches the term as a whole word, NOT already inside [[ ]]
-            pattern = r'(?<!\[)(?<!\|)\b' + re.escape(term) + r'\b(?!\])'
-            if re.search(pattern, content, re.IGNORECASE):
-                unlinked_term = term
-                break
-
-        if unlinked_term is None:
-            continue
-
-        # Inject inline link + footer entry
-        new_content = _inject_inline(content, [(new_note_title, new_note_path, search_terms)])
-        new_content = _inject_footer(new_content, [(new_note_title, new_note_path, search_terms)])
-
-        if new_content == content:
-            continue
-
-        try:
-            full_path.write_text(new_content, encoding="utf-8")
-            logger.info(
-                "retrolink: %s ← [[%s]] (matched %r)",
-                note_path, new_note_title, unlinked_term,
-            )
-            updated += 1
-        except Exception as exc:
-            logger.warning("retrolink: could not write %s: %s", note_path, exc)
-
-    if updated:
-        logger.info(
-            "retrolink: injected [[%s]] into %d existing note(s)", new_note_title, updated
-        )
-    return updated
+        words = {
+            w.lower() for w in re.findall(r"\w+", content)
+            if len(w) >= _MIN_ALIAS_LEN and w.lower() not in _GENERIC_WORDS
+        }
+        for word in words:
+            inv.setdefault(word, []).append(note_path)
+        count += 1
+    _save_inv(vault_path, inv)
+    logger.info("linker: initial inverted index built (%d words, %d notes)", len(inv), count)
+    return inv
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Utilities ─────────────────────────────────────────────────────────────────
 
 def _split_frontmatter(content: str) -> tuple[str, str]:
-    """Returns (body, frontmatter). Frontmatter is '' if none found."""
+    """Return (body, frontmatter_block). Frontmatter is '' if none found."""
     if not content.startswith("---"):
         return content, ""
     end = content.find("---", 3)

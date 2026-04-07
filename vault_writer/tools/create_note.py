@@ -138,6 +138,13 @@ def handle_create_note(
         except Exception as exc:
             logger.warning("update_moc error: %s", exc)
 
+    # ── Inverted index (for fast retrolink lookups) ───────────────────────────
+    try:
+        from vault_writer.ai.linker import update_inverted_index
+        update_inverted_index(file_path, content, config.vault.path)
+    except Exception as exc:
+        logger.debug("update_inverted_index: %s", exc)
+
     # ── Index + Stats ─────────────────────────────────────────────────────────
     update_index(index, note)
     stats.last_note_path = file_path
@@ -298,6 +305,13 @@ def handle_create_note_from_plan(
         register_folder(config.vault.path, full_folder)
     except Exception as exc:
         logger.debug("register_folder: %s", exc)
+
+    # ── Inverted index (for fast retrolink lookups) ───────────────────────────
+    try:
+        from vault_writer.ai.linker import update_inverted_index
+        update_inverted_index(file_path, content, config.vault.path)
+    except Exception as exc:
+        logger.debug("update_inverted_index: %s", exc)
 
     # ── Index + Stats ─────────────────────────────────────────────────────────
     update_index(index, note)
