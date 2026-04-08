@@ -35,6 +35,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     index        = context.bot_data["index"]
     stats        = context.bot_data["stats"]
 
+    # ── Bare URL → web clip ───────────────────────────────────────────────────
+    if _is_bare_url(text.strip()):
+        from telegram.handlers.commands import _do_clip
+        await _do_clip(update, context, text.strip())
+        return
+
     # ── Prefix detection (explicit type overrides AI routing) ─────────────────
     note_type, clean_text = detect_prefix(text, config.prefixes)
     if note_type is not None:
@@ -145,6 +151,12 @@ async def _reply_with_retry(update: Update, text: str, max_attempts: int = 3) ->
         except Exception as exc:
             logger.error("reply_text failed: %s", exc)
             return
+
+
+def _is_bare_url(text: str) -> bool:
+    """Return True if the entire message is a single URL (no surrounding text)."""
+    import re
+    return bool(re.fullmatch(r'https?://\S+', text))
 
 
 def _git_commit(file_path: str, config) -> None:

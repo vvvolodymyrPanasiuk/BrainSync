@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, timedelta
+from pathlib import Path
 
 from telegram.ext import ContextTypes
 
@@ -161,6 +162,48 @@ def get_pending_tasks(vault_path: str, index) -> list[str]:
         except Exception:
             continue
     return pending
+
+
+async def stale_task_reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Remind about tasks that have been open longer than stale_task_days."""
+    config = context.bot_data["config"]
+    index = context.bot_data["index"]
+
+    threshold = (date.today() - timedelta(days=config.schedule.stale_task_days)).isoformat()
+    vault = Path(config.vault.path)
+    pattern = re.compile(r"^- \[ \] (.+)$", re.MULTILINE)
+
+    stale: list[dict] = []
+    for path, note in index.notes.items():
+        if note.note_type.value != "task":
+            continue
+        if note.date > threshold:   # created recently — not stale
+            continue
+        try:
+            content = (vault / path).read_text(encoding="utf-8")
+        except Exception:
+            continue
+        tasks = pattern.findall(content)
+        if tasks:
+            stale.append({"note": path, "date": note.date, "tasks": tasks})
+
+    if not stale:
+        return
+
+    lines = [
+        f"⏰ Stale tasks (open > {config.schedule.stale_task_days} days) — "
+        f"{date.today().isoformat()}\n"
+    ]
+    for item in stale[:10]:
+        lines.append(f"📋 {item['note']} ({item['date']})")
+        for task in item["tasks"][:3]:
+            lines.append(f"  - [ ] {task}")
+        if len(item["tasks"]) > 3:
+            lines.append(f"  … +{len(item['tasks']) - 3} more")
+    if len(stale) > 10:
+        lines.append(f"\n… and {len(stale) - 10} more note(s) with stale tasks")
+
+    await _send_to_user(context, "\n".join(lines))
 
 
 async def _send_to_user(context: ContextTypes.DEFAULT_TYPE, text: str) -> None:

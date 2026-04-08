@@ -419,6 +419,28 @@ async def _save_note(
 ) -> str:
     from vault_writer.tools.create_note import handle_create_note_from_plan
     from telegram.formatter import format_confirmation, format_similarity_notice
+    from telegram.i18n import t
+
+    # ── Smart split: try splitting multi-topic messages before saving ─────────
+    if provider is not None:
+        splits = await _try_split(message, provider)
+        if splits:
+            logger.info("executor: smart split → %d notes", len(splits))
+            replies = [t("split_saved", count=len(splits))]
+            for split in splits:
+                try:
+                    sub_plan = await _re_route(split["text"], provider, index, config.vault.language)
+                    sub_plan.title = split["topic"]
+                except Exception:
+                    sub_plan = plan
+                loop = asyncio.get_running_loop()
+                r = await loop.run_in_executor(
+                    None, handle_create_note_from_plan,
+                    split["text"], sub_plan, config, index, stats, provider, vector_store,
+                )
+                if r.get("success"):
+                    replies.append(f"  · {format_confirmation(r['file_path'])}")
+            return "\n".join(replies)
 
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
@@ -578,6 +600,44 @@ async def _find_target_note(plan: ActionPlan, message: str, vector_store, index,
             return path
 
     return None
+
+
+async def _try_split(message: str, provider) -> list[dict] | None:
+    """Detect if message covers multiple unrelated topics and return splits.
+
+    Returns a list of {topic, text} dicts if splitting is warranted (≥2 items),
+    otherwise returns None. Only runs for messages longer than 150 chars.
+    """
+    if len(message) < 150:
+        return None
+
+    import json as _json
+    import re as _re
+
+    prompt = (
+        "Does this message contain 2 or more CLEARLY UNRELATED topics that should be "
+        "separate Obsidian notes (e.g. a coding insight + a personal fitness event)?\n"
+        "Be conservative — do NOT split if it's one topic with multiple aspects.\n"
+        "If yes: return JSON array [{\"topic\": \"...\", \"text\": \"...\"}] (one object per topic).\n"
+        "If no: return []\n\n"
+        f"Message:\n{message}"
+    )
+    try:
+        loop = asyncio.get_running_loop()
+        raw = await loop.run_in_executor(None, provider.complete, prompt, 500)
+        raw = _re.sub(r"<think>.*?</think>", "", raw, flags=_re.DOTALL).strip()
+        j_start = raw.find("[")
+        j_end = raw.rfind("]") + 1
+        if j_start == -1 or j_end <= j_start:
+            return None
+        splits = _json.loads(raw[j_start:j_end])
+        if not isinstance(splits, list) or len(splits) < 2:
+            return None
+        valid = [s for s in splits if isinstance(s, dict) and s.get("topic") and s.get("text")]
+        return valid if len(valid) >= 2 else None
+    except Exception as exc:
+        logger.debug("executor: _try_split: %s", exc)
+        return None
 
 
 async def _re_route(message: str, provider, index, locale: str = "en") -> ActionPlan:

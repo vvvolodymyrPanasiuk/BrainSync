@@ -136,6 +136,134 @@ async def cmd_move(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(reply, parse_mode="Markdown")
 
 
+async def cmd_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run vault health check and report orphans, broken links, duplicates."""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+    index = context.bot_data["index"]
+
+    from vault_writer.tools.health import run_health_check
+    from telegram.formatter import format_health_report
+    report = run_health_check(config.vault.path, index)
+    await update.message.reply_text(format_health_report(report))
+
+
+async def cmd_clip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clip a URL: fetch page, summarise with AI, save as note."""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+    url = " ".join(context.args).strip() if context.args else ""
+    if not url or not url.startswith("http"):
+        await update.message.reply_text("Usage: /clip <url>")
+        return
+    await _do_clip(update, context, url)
+
+
+async def _do_clip(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str) -> None:
+    """Shared logic for /clip command and auto-detected URLs in messages."""
+    from telegram.constants import ChatAction
+    from telegram.i18n import t
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    await update.message.reply_text(t("clip_fetching"))
+
+    config = context.bot_data["config"]
+    index = context.bot_data["index"]
+    stats = context.bot_data["stats"]
+    provider = context.bot_data.get("provider")
+    vector_store = context.bot_data.get("vector_store")
+
+    from vault_writer.tools.web_clip import fetch_url
+    try:
+        page_title, page_text = fetch_url(url)
+    except Exception as exc:
+        logger.warning("cmd_clip: fetch failed for %s: %s", url, exc)
+        from telegram.formatter import format_clip_error
+        await update.message.reply_text(format_clip_error(str(exc)))
+        return
+
+    # Build a note from the clipped content
+    if provider is not None:
+        import asyncio
+        loop = asyncio.get_running_loop()
+        try:
+            summary = await loop.run_in_executor(
+                None, provider.complete,
+                f"Summarise the following web page into a well-structured Obsidian note body. "
+                f"Use sections: Description, Key Points, Conclusions, Links. "
+                f"Cite the source URL at the end. Return only the markdown body.\n\n"
+                f"Title: {page_title}\nURL: {url}\n\nContent:\n{page_text}",
+            )
+            content_override = summary
+        except Exception as exc:
+            logger.warning("cmd_clip: AI summarise failed: %s — using raw text", exc)
+            content_override = f"## Description\n\n{page_text}\n\n## Links\n\n- {url}\n"
+    else:
+        content_override = f"## Description\n\n{page_text}\n\n## Links\n\n- {url}\n"
+
+    # Route with AI to determine folder, then save
+    if context.bot_data.get("ai_ready") and provider is not None:
+        import asyncio
+        from vault_writer.ai.router import route
+        loop = asyncio.get_running_loop()
+        try:
+            plan = await loop.run_in_executor(
+                None, route, f"Web article: {page_title}", provider, index, config.vault.language
+            )
+        except Exception:
+            plan = _minimal_plan(page_title)
+    else:
+        plan = _minimal_plan(page_title)
+
+    plan.title = page_title
+
+    from vault_writer.tools.create_note import handle_create_note_from_plan
+    import asyncio
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None, handle_create_note_from_plan,
+        f"Web clip: {page_title}", plan, config, index, stats, provider, vector_store,
+        content_override,
+    )
+
+    if result.get("success"):
+        from telegram.formatter import format_clip_saved
+        reply = format_clip_saved(result["file_path"], url)
+    else:
+        from telegram.formatter import format_clip_error
+        reply = format_clip_error(result.get("error", "unknown error"))
+
+    await update.message.reply_text(reply, parse_mode="Markdown")
+
+    if result.get("success") and config.git.enabled and config.git.auto_commit:
+        _git_commit(result["file_path"], config)
+
+
+def _minimal_plan(title: str):
+    """Build a minimal CREATE_NOTE ActionPlan used when AI router is unavailable."""
+    from vault_writer.ai.router import ActionPlan, Intent
+    return ActionPlan(
+        intent=Intent.CREATE_NOTE,
+        confidence=0.5,
+        should_save=True,
+        needs_web=False,
+        needs_clarification=False,
+        note_type="note",
+        general_category="",
+        target_folder="General",
+        target_subfolder="",
+        section="",
+        topic=title[:60],
+        tags=[],
+        summary=title[:100],
+        actions=["create_note"],
+        sources=[],
+        reason="web clip",
+        title=title[:60],
+    )
+
+
 async def cmd_merge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Merge the newly saved note with its detected duplicate."""
     config = context.bot_data["config"]
@@ -224,9 +352,11 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/task <текст> — зберегти задачу\n"
         "/idea <текст> — зберегти ідею\n"
         "/journal <текст> — запис у щоденник\n"
+        "/clip <url> — зберегти веб-сторінку як нотатку\n"
         "/search <запит> — пошук у vault\n"
         "/move <тема> -> <папка> — перемістити нотатку\n"
         "/merge — об'єднати нотатку з дублікатом\n"
+        "/health — перевірка здоров'я vault\n"
         "/status — статус бота\n"
         "/help — ця довідка"
     )

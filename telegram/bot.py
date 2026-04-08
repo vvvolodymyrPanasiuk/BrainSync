@@ -24,16 +24,19 @@ def build_application(config, index, stats, provider, vector_store=None) -> Appl
 
     # Command handlers
     from telegram.handlers.commands import (
-        cmd_help, cmd_idea, cmd_journal, cmd_merge, cmd_move,
-        cmd_note, cmd_reindex, cmd_search, cmd_status, cmd_task,
+        cmd_clip, cmd_health, cmd_help, cmd_idea, cmd_journal,
+        cmd_merge, cmd_move, cmd_note, cmd_reindex, cmd_search,
+        cmd_status, cmd_task,
     )
     app.add_handler(CommandHandler("note", cmd_note))
     app.add_handler(CommandHandler("task", cmd_task))
     app.add_handler(CommandHandler("idea", cmd_idea))
     app.add_handler(CommandHandler("journal", cmd_journal))
+    app.add_handler(CommandHandler("clip", cmd_clip))
     app.add_handler(CommandHandler("search", cmd_search))
     app.add_handler(CommandHandler("move", cmd_move))
     app.add_handler(CommandHandler("merge", cmd_merge))
+    app.add_handler(CommandHandler("health", cmd_health))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("reindex", cmd_reindex))
@@ -73,7 +76,10 @@ async def _error_handler(update, context) -> None:
 
 
 def _register_scheduled_jobs(app: Application, config) -> None:
-    from telegram.handlers.schedule import daily_summary_job, monthly_summary_job, weekly_summary_job
+    from telegram.handlers.schedule import (
+        daily_summary_job, monthly_summary_job,
+        stale_task_reminder_job, weekly_summary_job,
+    )
 
     jq = app.job_queue
     if jq is None:
@@ -101,3 +107,6 @@ def _register_scheduled_jobs(app: Application, config) -> None:
             when=config.schedule.monthly_review_time,
             day=config.schedule.monthly_review_day,
         )
+
+    if config.schedule.stale_task_reminder_enabled:
+        jq.run_daily(stale_task_reminder_job, time=config.schedule.stale_task_reminder_time)

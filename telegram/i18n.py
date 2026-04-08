@@ -37,6 +37,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "merge_done":         "✅ Merged into `{dest}`\nDeleted: `{src}`",
         "merge_failed":       "❌ Merge failed: {error}",
         "merge_files_gone":   "❌ Cannot merge: one of the files no longer exists.",
+        "clip_saved":         "📎 Clipped → `{file_path}`\n_Source: {url}_",
+        "clip_error":         "❌ Could not clip URL: {error}",
+        "clip_fetching":      "⏳ Fetching and clipping…",
+        "split_saved":        "📝 Split into {count} notes:",
     },
     "uk": {
         "bot_online":         "🟢 BrainSync online — готовий до роботи.",
@@ -71,6 +75,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "merge_done":         "✅ Об'єднано у `{dest}`\nВидалено: `{src}`",
         "merge_failed":       "❌ Помилка об'єднання: {error}",
         "merge_files_gone":   "❌ Неможливо об'єднати: один із файлів більше не існує.",
+        "clip_saved":         "📎 Збережено → `{file_path}`\n_Джерело: {url}_",
+        "clip_error":         "❌ Не вдалося завантажити URL: {error}",
+        "clip_fetching":      "⏳ Завантажую та зберігаю…",
+        "split_saved":        "📝 Розбито на {count} нотатки:",
     },
 }
 

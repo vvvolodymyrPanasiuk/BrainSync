@@ -64,6 +64,9 @@ class ScheduleConfig:
     monthly_review_enabled: bool
     monthly_review_day: int
     monthly_review_time: time
+    stale_task_reminder_enabled: bool = False
+    stale_task_days: int = 7
+    stale_task_reminder_time: time = time(9, 0)
 
 
 @dataclass
@@ -180,6 +183,7 @@ def load_config(config_path: str) -> AppConfig:
     weekly_raw = schedule_raw.get("weekly_review", {})
     monthly_raw = schedule_raw.get("monthly_review", {})
 
+    stale_raw = schedule_raw.get("stale_task_reminder", {})
     schedule = ScheduleConfig(
         daily_summary_enabled=daily_raw.get("enabled", True),
         daily_summary_time=_parse_time(daily_raw.get("time", "21:00"), "schedule.daily_summary.time"),
@@ -189,6 +193,9 @@ def load_config(config_path: str) -> AppConfig:
         monthly_review_enabled=monthly_raw.get("enabled", True),
         monthly_review_day=int(monthly_day),
         monthly_review_time=_parse_time(monthly_raw.get("time", "10:00"), "schedule.monthly_review.time"),
+        stale_task_reminder_enabled=bool(stale_raw.get("enabled", False)),
+        stale_task_days=int(stale_raw.get("days", 7)),
+        stale_task_reminder_time=_parse_time(stale_raw.get("time", "09:00"), "schedule.stale_task_reminder.time"),
     )
 
     return AppConfig(

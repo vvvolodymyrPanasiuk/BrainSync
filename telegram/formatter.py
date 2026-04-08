@@ -132,3 +132,51 @@ def format_reindex_done(count: int) -> str:
 
 def format_index_building_notice() -> str:
     return t("index_building")
+
+
+def format_health_report(report: dict) -> str:
+    orphans    = report["orphans"]
+    broken     = report["broken_links"]
+    no_aliases = report["no_aliases"]
+    duplicates = report["duplicates"]
+    total      = report["total"]
+
+    lines = [f"🏥 Vault health — {total} notes\n"]
+    has_issues = orphans or broken or duplicates
+
+    if not has_issues:
+        lines.append("✅ No issues found!")
+
+    if orphans:
+        lines.append(f"🔗 Orphan notes (no incoming links): {len(orphans)}")
+        for p in orphans[:5]:
+            lines.append(f"  · {p}")
+        if len(orphans) > 5:
+            lines.append(f"  … and {len(orphans) - 5} more")
+
+    if broken:
+        lines.append(f"\n❌ Broken wikilinks: {len(broken)}")
+        for b in broken[:5]:
+            lines.append(f"  · [[{b['link']}]] in {b['note']}")
+        if len(broken) > 5:
+            lines.append(f"  … and {len(broken) - 5} more")
+
+    if duplicates:
+        lines.append(f"\n⚠️ Duplicate titles: {len(duplicates)}")
+        for title, paths in duplicates[:3]:
+            lines.append(f"  · \"{title}\": {len(paths)} notes")
+        if len(duplicates) > 3:
+            lines.append(f"  … and {len(duplicates) - 3} more")
+
+    if no_aliases:
+        lines.append(f"\nℹ️ Notes without aliases: {len(no_aliases)}")
+
+    return "\n".join(lines)
+
+
+def format_clip_saved(file_path: str, url: str) -> str:
+    return t("clip_saved", file_path=file_path, url=url)
+
+
+def format_clip_error(error: str) -> str:
+    return t("clip_error", error=error)
