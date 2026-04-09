@@ -21,9 +21,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if data == "dup_merge":
+        # Show confirmation dialog instead of merging immediately (#5)
         from telegram.handlers.commands import cmd_merge
         await cmd_merge(update, context)
         await query.edit_message_reply_markup(reply_markup=None)
+        return
+
+    # ── Merge confirmation ─────────────────────────────────────────────────────
+    if data == "merge_do_confirm":
+        from telegram.handlers.commands import _do_merge
+        await _do_merge(update, context)
+        return
+
+    if data == "merge_do_cancel":
+        context.user_data.pop("pending_merge", None)
+        await query.edit_message_reply_markup(reply_markup=None)
+        from telegram.i18n import t
+        await query.message.reply_text(t("merge_cancelled"))
+        return
+
+    # ── Settings toggles ───────────────────────────────────────────────────────
+    if data.startswith("settings:"):
+        await _handle_settings(update, context, data[9:])
         return
 
     # ── Post-save actions ──────────────────────────────────────────────────────
@@ -73,3 +92,75 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     logger.debug("callbacks: unhandled data=%r", data)
+
+
+async def _handle_settings(
+    update, context, sub: str
+) -> None:
+    """Handle settings:toggle:{key} and settings:close callbacks."""
+    query = update.callback_query
+    config = context.bot_data["config"]
+
+    if sub == "close":
+        await query.edit_message_reply_markup(reply_markup=None)
+        return
+
+    if not sub.startswith("toggle:"):
+        return
+    key = sub[7:]  # strip "toggle:"
+
+    # Toggle the value in memory
+    _TOGGLES = {
+        "git.auto_commit":               ("git", "auto_commit"),
+        "enrichment_add_wikilinks":      (None,  "enrichment_add_wikilinks"),
+        "enrichment_update_moc":         (None,  "enrichment_update_moc"),
+        "schedule.daily_summary_enabled": ("schedule", "daily_summary_enabled"),
+    }
+    if key not in _TOGGLES:
+        await query.answer("Unknown setting.")
+        return
+
+    section, attr = _TOGGLES[key]
+    obj = getattr(config, section) if section else config
+    current = getattr(obj, attr)
+    setattr(obj, attr, not current)
+    new_val = not current
+
+    # Persist to config.yaml
+    try:
+        _persist_setting(config.config_path, key, new_val)
+    except Exception as exc:
+        logger.warning("settings: persist failed: %s", exc)
+
+    # Update the keyboard in place
+    from telegram.keyboards import settings_keyboard
+    from telegram.i18n import t
+    await query.edit_message_reply_markup(reply_markup=settings_keyboard(config))
+    await query.answer(t("settings_saved", key=key, value=new_val))
+
+
+def _persist_setting(config_path: str, key: str, value: bool) -> None:
+    """Write a single boolean toggle back to config.yaml."""
+    import yaml
+    from pathlib import Path
+
+    p = Path(config_path)
+    raw = yaml.safe_load(p.read_text(encoding="utf-8"))
+
+    # Map key → yaml path
+    _YAML_PATH = {
+        "git.auto_commit":               ["git", "auto_commit"],
+        "enrichment_add_wikilinks":      ["enrichment", "add_wikilinks"],
+        "enrichment_update_moc":         ["enrichment", "update_moc"],
+        "schedule.daily_summary_enabled": ["schedule", "daily_summary", "enabled"],
+    }
+    parts = _YAML_PATH.get(key)
+    if not parts:
+        return
+
+    node = raw
+    for part in parts[:-1]:
+        node = node.setdefault(part, {})
+    node[parts[-1]] = value
+
+    p.write_text(yaml.dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8")

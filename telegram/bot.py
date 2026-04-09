@@ -24,9 +24,10 @@ def build_application(config, index, stats, provider, vector_store=None) -> Appl
 
     # Command handlers
     from telegram.handlers.commands import (
-        cmd_clip, cmd_health, cmd_help, cmd_idea, cmd_journal,
+        cmd_clip, cmd_gaps, cmd_graph, cmd_health, cmd_help, cmd_idea, cmd_journal,
         cmd_merge, cmd_move, cmd_note, cmd_reindex, cmd_reload,
-        cmd_register_topic, cmd_search, cmd_status, cmd_task, cmd_today,
+        cmd_register_topic, cmd_search, cmd_settings, cmd_stats, cmd_status,
+        cmd_task, cmd_today,
     )
     app.add_handler(CommandHandler("note",           cmd_note))
     app.add_handler(CommandHandler("task",           cmd_task))
@@ -42,6 +43,10 @@ def build_application(config, index, stats, provider, vector_store=None) -> Appl
     app.add_handler(CommandHandler("reload",         cmd_reload))
     app.add_handler(CommandHandler("reindex",        cmd_reindex))
     app.add_handler(CommandHandler("register-topic", cmd_register_topic))
+    app.add_handler(CommandHandler("settings",       cmd_settings))
+    app.add_handler(CommandHandler("stats",          cmd_stats))
+    app.add_handler(CommandHandler("graph",          cmd_graph))
+    app.add_handler(CommandHandler("gaps",           cmd_gaps))
     app.add_handler(CommandHandler("help",           cmd_help))
 
     # Inline keyboard callback handler

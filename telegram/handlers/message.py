@@ -80,11 +80,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _reply_with_retry(update, t("ai_not_ready"))
         return
 
+    # ── Progress indicator (#6) ───────────────────────────────────────────────
+    from telegram.i18n import t as _t
+    progress_msg = None
+    try:
+        progress_msg = await update.message.reply_text(_t("progress_thinking"))
+    except Exception:
+        pass
+
     # ── AI Semantic Router ────────────────────────────────────────────────────
     try:
         plan = await _route(text, provider, index, config.vault.language)
     except Exception as exc:
         logger.error("routing failed: %s", exc, exc_info=True)
+        if progress_msg:
+            try:
+                await progress_msg.delete()
+            except Exception:
+                pass
         await _reply_with_retry(update, f"❌ AI error: `{exc}`")
         return
 
@@ -101,6 +114,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         provider=provider,
         vector_store=vector_store,
     )
+
+    # Delete progress indicator before sending the real reply
+    if progress_msg:
+        try:
+            await progress_msg.delete()
+        except Exception:
+            pass
 
     if reply:
         await _reply_with_retry(update, reply, keyboard=keyboard)

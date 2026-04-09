@@ -272,6 +272,8 @@ async def _do_clip(update: Update, context: ContextTypes.DEFAULT_TYPE, url: str)
     # Build a note from the clipped content
     if provider is not None:
         import asyncio
+        from telegram.i18n import t as _t
+        await update.message.reply_text(_t("clip_summarising"))
         loop = asyncio.get_running_loop()
         try:
             summary = await loop.run_in_executor(
@@ -351,23 +353,56 @@ def _minimal_plan(title: str):
 
 
 async def cmd_merge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Merge the newly saved note with its detected duplicate."""
+    """Show merge confirmation dialog before actually merging."""
     config = context.bot_data["config"]
-    if not auth_check(update, config):
+    msg = update.message or (update.callback_query.message if update.callback_query else None)
+    if msg is None:
+        return
+
+    # auth check — use effective_user from update
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id not in config.telegram.allowed_user_ids:
         return
 
     from telegram.i18n import t
     pending = context.user_data.get("pending_merge") if context.user_data else None
     if not pending:
-        await update.message.reply_text(t("merge_no_pending"))
+        await msg.reply_text(t("merge_no_pending"))
+        return
+
+    new_path: str = pending["new_path"]
+    dup_path: str = pending["duplicate_path"]
+
+    from telegram.keyboards import merge_confirm_keyboard
+    await msg.reply_text(
+        t("merge_confirm", new=new_path, dup=dup_path),
+        parse_mode="Markdown",
+        reply_markup=merge_confirm_keyboard(),
+    )
+
+
+async def _do_merge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Perform the actual merge after confirmation (called from callback handler)."""
+    query = update.callback_query
+    config = context.bot_data["config"]
+
+    from telegram.i18n import t
+    pending = context.user_data.get("pending_merge") if context.user_data else None
+    if not pending:
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(t("merge_no_pending"))
         return
 
     new_path: str = pending["new_path"]
     dup_path: str = pending["duplicate_path"]
     context.user_data.pop("pending_merge", None)
 
+    await query.edit_message_reply_markup(reply_markup=None)
+
     from telegram.constants import ChatAction
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    await context.bot.send_chat_action(
+        chat_id=query.message.chat_id, action=ChatAction.TYPING
+    )
 
     from pathlib import Path
     vault = Path(config.vault.path)
@@ -375,15 +410,15 @@ async def cmd_merge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     dup_file = vault / dup_path
 
     if not new_file.exists() or not dup_file.exists():
-        await update.message.reply_text(t("merge_files_gone"))
+        await query.message.reply_text(t("merge_files_gone"))
         return
 
     try:
         new_content = new_file.read_text(encoding="utf-8")
         dup_content = dup_file.read_text(encoding="utf-8")
     except Exception as exc:
-        logger.error("cmd_merge: read error: %s", exc)
-        await update.message.reply_text(t("merge_failed", error=str(exc)))
+        logger.error("_do_merge: read error: %s", exc)
+        await query.message.reply_text(t("merge_failed", error=str(exc)))
         return
 
     provider = context.bot_data.get("provider")
@@ -400,7 +435,7 @@ async def cmd_merge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 f"NOTE 1 (existing):\n{dup_content}\n\nNOTE 2 (new):\n{new_content}",
             )
         except Exception as exc:
-            logger.warning("cmd_merge: AI merge failed: %s — concatenating", exc)
+            logger.warning("_do_merge: AI failed: %s — concatenating", exc)
             merged = dup_content.rstrip() + "\n\n---\n\n" + new_content
     else:
         merged = dup_content.rstrip() + "\n\n---\n\n" + new_content
@@ -415,17 +450,329 @@ async def cmd_merge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 vector_store.upsert_note(dup_path, merged)
                 vector_store.delete_note(new_path)
             except Exception as exc:
-                logger.warning("cmd_merge: vector store update: %s", exc)
+                logger.warning("_do_merge: vector store update: %s", exc)
 
         index = context.bot_data["index"]
         index.notes.pop(new_path, None)
 
-        await update.message.reply_text(
+        await query.message.reply_text(
             t("merge_done", dest=dup_path, src=new_path), parse_mode="Markdown"
         )
     except Exception as exc:
-        logger.error("cmd_merge: write error: %s", exc)
-        await update.message.reply_text(t("merge_failed", error=str(exc)))
+        logger.error("_do_merge: write error: %s", exc)
+        await query.message.reply_text(t("merge_failed", error=str(exc)))
+
+
+async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show interactive settings menu with toggle buttons."""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+    from telegram.keyboards import settings_keyboard
+    from telegram.i18n import t
+    await update.message.reply_text(
+        t("settings_header"),
+        parse_mode="Markdown",
+        reply_markup=settings_keyboard(config),
+    )
+
+
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show detailed vault statistics, optionally with a chart."""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+
+    index = context.bot_data["index"]
+    from telegram.i18n import t
+    from collections import Counter
+    from datetime import date, timedelta
+
+    notes = list(index.notes.values())
+    total = len(notes)
+
+    # Per-folder counts
+    folder_counts: Counter = Counter(n.folder.split("/")[0] for n in notes)
+    top_folders = folder_counts.most_common(10)
+
+    # Note types
+    type_counts: Counter = Counter(n.note_type.value if hasattr(n.note_type, "value") else str(n.note_type) for n in notes)
+
+    # Activity last 30 days
+    today = date.today()
+    last30 = Counter()
+    for n in notes:
+        try:
+            d = date.fromisoformat(n.date)
+            if (today - d).days <= 30:
+                last30[n.date] += 1
+        except Exception:
+            pass
+
+    lines = [t("stats_header"), f"\n*Total notes:* {total}\n"]
+
+    if top_folders:
+        lines.append("*By folder:*")
+        for folder, count in top_folders:
+            bar = "█" * min(count, 20)
+            lines.append(f"  `{folder:<20}` {bar} {count}")
+
+    if type_counts:
+        lines.append("\n*By type:*")
+        for tp, count in type_counts.most_common():
+            lines.append(f"  {tp}: {count}")
+
+    if last30:
+        active_days = len(last30)
+        peak_day = max(last30, key=last30.get)
+        peak_count = last30[peak_day]
+        lines.append(f"\n*Last 30 days:* {sum(last30.values())} notes across {active_days} days")
+        lines.append(f"*Best day:* {peak_day} ({peak_count} notes)")
+
+    gamification_path = None
+    try:
+        from pathlib import Path
+        import json
+        gf = Path(config.vault.path) / ".brainsync" / "gamification.json"
+        if gf.exists():
+            g = json.loads(gf.read_text(encoding="utf-8"))
+            level = g.get("level_name", "")
+            xp = g.get("total_xp", 0)
+            streak = g.get("streak_days", 0)
+            lines.append(f"\n*Level:* {level} ({xp} XP)")
+            lines.append(f"*Current streak:* {streak} days 🔥")
+    except Exception:
+        pass
+
+    # Try to send a chart
+    chart_sent = False
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import io
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+        fig.patch.set_facecolor("#1e1e2e")
+
+        # Bar chart: top folders
+        if top_folders:
+            labels, values = zip(*top_folders[:8])
+            ax1.barh(labels, values, color="#89b4fa")
+            ax1.set_facecolor("#1e1e2e")
+            ax1.tick_params(colors="#cdd6f4")
+            ax1.set_title("Notes by folder", color="#cdd6f4")
+            for spine in ax1.spines.values():
+                spine.set_edgecolor("#313244")
+
+        # Line chart: activity last 30 days
+        if last30:
+            days = [(today - timedelta(days=i)).isoformat() for i in range(29, -1, -1)]
+            counts = [last30.get(d, 0) for d in days]
+            ax2.fill_between(range(30), counts, color="#a6e3a1", alpha=0.6)
+            ax2.plot(range(30), counts, color="#a6e3a1")
+            ax2.set_facecolor("#1e1e2e")
+            ax2.tick_params(colors="#cdd6f4")
+            ax2.set_title("Activity (last 30 days)", color="#cdd6f4")
+            ax2.set_xticks([0, 9, 19, 29])
+            ax2.set_xticklabels([days[0][5:], days[9][5:], days[19][5:], days[29][5:]])
+            for spine in ax2.spines.values():
+                spine.set_edgecolor("#313244")
+
+        plt.tight_layout()
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png", facecolor=fig.get_facecolor())
+        plt.close(fig)
+        buf.seek(0)
+        await update.message.reply_photo(buf, caption="\n".join(lines), parse_mode="Markdown")
+        chart_sent = True
+    except ImportError:
+        pass
+    except Exception as exc:
+        logger.warning("cmd_stats: chart failed: %s", exc)
+
+    if not chart_sent:
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def cmd_gaps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """AI-powered knowledge gap analysis: /gaps <topic>"""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+
+    topic = " ".join(context.args).strip() if context.args else ""
+    if not topic:
+        await update.message.reply_text(
+            "Usage: `/gaps <topic>`\nExample: `/gaps Python async`",
+            parse_mode="Markdown",
+        )
+        return
+
+    provider = context.bot_data.get("provider")
+    from telegram.i18n import t
+    if provider is None:
+        await update.message.reply_text(t("gaps_no_ai"))
+        return
+
+    index = context.bot_data["index"]
+    from telegram.constants import ChatAction
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    await update.message.reply_text(t("gaps_thinking"))
+
+    from collections import Counter
+    folder_counts: Counter = Counter(n.folder for n in index.notes.values())
+    # Get notes related to the topic (fuzzy match on folder/title)
+    topic_lower = topic.lower()
+    related = [
+        f"{n.title} ({n.folder})"
+        for n in index.notes.values()
+        if topic_lower in n.folder.lower() or topic_lower in n.title.lower()
+    ][:30]
+
+    vault_summary = "\n".join(f"  • {folder}: {count}" for folder, count in folder_counts.most_common(20))
+    related_summary = "\n".join(f"  - {r}" for r in related) if related else "  (no direct matches)"
+
+    prompt = (
+        f"You are a personal knowledge management expert analyzing a user's Obsidian vault.\n\n"
+        f"The user wants to identify knowledge gaps related to: **{topic}**\n\n"
+        f"Vault structure (folder: note count):\n{vault_summary}\n\n"
+        f"Existing notes matching '{topic}':\n{related_summary}\n\n"
+        f"Based on this, what important subtopics, concepts, or areas are MISSING or underdeveloped? "
+        f"Give specific, actionable suggestions in the same language as '{topic}'. "
+        f"Format as a numbered list with brief explanations. Be concrete and practical."
+    )
+
+    import asyncio
+    loop = asyncio.get_running_loop()
+    try:
+        answer = await loop.run_in_executor(None, provider.complete, prompt)
+        await update.message.reply_text(
+            t("gaps_header", topic=topic) + answer,
+            parse_mode="Markdown",
+        )
+    except Exception as exc:
+        logger.error("cmd_gaps: AI failed: %s", exc)
+        await update.message.reply_text(f"❌ AI error: `{exc}`", parse_mode="Markdown")
+
+
+async def cmd_graph(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Generate and send a knowledge graph PNG of vault wikilinks."""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+
+    from telegram.i18n import t
+    await update.message.reply_text(t("graph_building"))
+
+    try:
+        import networkx as nx
+    except ImportError:
+        await update.message.reply_text(t("graph_no_lib"), parse_mode="Markdown")
+        return
+
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import io
+    except ImportError:
+        await update.message.reply_text(t("graph_no_lib"), parse_mode="Markdown")
+        return
+
+    import re
+    from pathlib import Path
+    from telegram.constants import ChatAction
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+    index = context.bot_data["index"]
+    vault = Path(config.vault.path)
+    wikilink_re = re.compile(r"\[\[([^\]|#]+)")
+
+    G = nx.Graph()
+    folder_map: dict[str, str] = {}
+
+    for rel_path, note in index.notes.items():
+        title = note.title or Path(rel_path).stem
+        top_folder = note.folder.split("/")[0] if note.folder else "General"
+        G.add_node(title)
+        folder_map[title] = top_folder
+
+        full = vault / rel_path
+        if not full.exists():
+            continue
+        try:
+            content = full.read_text(encoding="utf-8", errors="ignore")
+            for m in wikilink_re.finditer(content):
+                target = m.group(1).strip()
+                if target and target != title:
+                    G.add_edge(title, target)
+        except Exception:
+            continue
+
+    if G.number_of_edges() == 0:
+        await update.message.reply_text(t("graph_empty"))
+        return
+
+    # Keep only nodes with edges (remove isolates for clarity)
+    isolates = list(nx.isolates(G))
+    G.remove_nodes_from(isolates)
+
+    if G.number_of_nodes() == 0:
+        await update.message.reply_text(t("graph_empty"))
+        return
+
+    # Assign colors by folder
+    unique_folders = list(set(folder_map.values()))
+    cmap = plt.cm.get_cmap("tab20", len(unique_folders))
+    folder_color = {f: cmap(i) for i, f in enumerate(unique_folders)}
+    node_colors = [folder_color.get(folder_map.get(n, "General"), (0.5, 0.5, 0.5, 1)) for n in G.nodes()]
+
+    fig, ax = plt.subplots(figsize=(14, 10))
+    fig.patch.set_facecolor("#1e1e2e")
+    ax.set_facecolor("#1e1e2e")
+
+    # Layout
+    try:
+        pos = nx.spring_layout(G, k=2.0, seed=42, iterations=50)
+    except Exception:
+        pos = nx.random_layout(G, seed=42)
+
+    node_size = [max(100, 50 * G.degree(n)) for n in G.nodes()]
+
+    nx.draw_networkx_edges(G, pos, ax=ax, alpha=0.3, edge_color="#585b70", width=0.8)
+    nx.draw_networkx_nodes(G, pos, ax=ax, node_color=node_colors, node_size=node_size, alpha=0.9)
+
+    # Labels only for high-degree nodes
+    degree_threshold = max(2, G.number_of_nodes() // 15)
+    labels = {n: n for n in G.nodes() if G.degree(n) >= degree_threshold}
+    nx.draw_networkx_labels(G, pos, labels, ax=ax, font_size=7, font_color="#cdd6f4")
+
+    # Legend
+    legend_items = [
+        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=folder_color[f], markersize=8, label=f)
+        for f in unique_folders[:12]
+    ]
+    ax.legend(handles=legend_items, loc="upper left", framealpha=0.3,
+              facecolor="#313244", labelcolor="#cdd6f4", fontsize=7)
+
+    ax.set_title(
+        f"Knowledge Graph — {G.number_of_nodes()} notes, {G.number_of_edges()} links",
+        color="#cdd6f4", fontsize=12,
+    )
+    ax.axis("off")
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", facecolor=fig.get_facecolor(), dpi=120)
+    plt.close(fig)
+    buf.seek(0)
+
+    await update.message.reply_photo(
+        buf,
+        caption=f"🕸️ Knowledge graph: {G.number_of_nodes()} notes · {G.number_of_edges()} links",
+    )
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -441,12 +788,16 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "*Vault*\n"
         "/search <запит> — семантичний пошук\n"
         "/today — нотатки та задачі за сьогодні\n"
+        "/stats — статистика та графіки\n"
+        "/graph — граф знань (PNG)\n"
+        "/gaps <тема> — аналіз прогалин знань\n"
         "/health — перевірка vault\n"
         "/move <тема> -> <папка>\n"
         "/merge — злити нотатку з дублікатом\n\n"
         "*Групи*\n"
         "/register-topic <Папка> — прив'язати топік до vault-папки\n\n"
         "*Система*\n"
+        "/settings — налаштування бота\n"
         "/status — статус бота\n"
         "/reload — перезавантажити config.yaml\n"
         "/reindex — переіндексувати vault\n"
