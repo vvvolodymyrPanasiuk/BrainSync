@@ -2,14 +2,15 @@
 chcp 65001 > nul 2>&1
 title BrainSync Bot
 cd /d "%~dp0"
+set PYTHONUNBUFFERED=1
 
-uv run python bot_runner.py
+uv run python -u bot_runner.py
 
 echo.
 if errorlevel 1 (
-    echo  ══════════════════════════════════════════════
-    echo  BrainSync crashed. Scroll up to read the error.
-    echo  ══════════════════════════════════════════════
+    echo ============================================
+    echo  BrainSync crashed. Scroll up for the error.
+    echo ============================================
 ) else (
     echo  BrainSync stopped normally.
 )
