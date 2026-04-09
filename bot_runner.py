@@ -174,8 +174,8 @@ async def _ensure_infrastructure_ready(app) -> None:
             logger.warning("Online notice failed for %s: %s", uid, exc)
 
 
-async def _notify_shutdown(app) -> None:
-    """Post-shutdown: send offline notice to all allowed users."""
+async def _notify_offline(app) -> None:
+    """Pre-shutdown: send offline notice while HTTP client is still alive."""
     config = app.bot_data.get("config")
     if config is None:
         return
@@ -184,7 +184,7 @@ async def _notify_shutdown(app) -> None:
         try:
             await app.bot.send_message(chat_id=uid, text=format_bot_offline())
         except Exception as exc:
-            logger.warning("Offline notice failed for %s: %s", uid, exc)
+            logger.debug("Offline notice failed for %s: %s", uid, exc)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -241,7 +241,7 @@ def main() -> None:
     from telegram.bot import build_application
     app = build_application(config, index, stats, provider, vector_store=vector_store)
     app.post_init = _ensure_infrastructure_ready
-    app.post_shutdown = _notify_shutdown
+    app.post_stop = _notify_offline
 
     logger.info("Polling — allowed_users=%s", config.telegram.allowed_user_ids)
     app.run_polling(drop_pending_updates=True)
