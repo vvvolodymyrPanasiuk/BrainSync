@@ -2,7 +2,7 @@
 
 **Local AI-powered personal knowledge management via Telegram.**
 
-Send a message, voice note, photo, or PDF → AI classifies, formats, and saves it as a structured Markdown note in your Obsidian vault. Ask questions about your notes in natural language — the bot searches your vault semantically and answers using only your own knowledge. Everything runs locally, nothing leaves your machine except optional AI API calls.
+Send a message, voice note, photo, PDF, or YouTube link → AI classifies, formats, and saves it as a structured Markdown note in your Obsidian vault. Ask questions about your notes in natural language — the bot searches your vault semantically and answers using only your own knowledge. Everything runs locally, nothing leaves your machine except optional AI API calls.
 
 ---
 
@@ -10,9 +10,9 @@ Send a message, voice note, photo, or PDF → AI classifies, formats, and saves 
 
 BrainSync solves two problems: **capture** and **retrieval**.
 
-**Capture** — you have a thought while doing something else. You open Telegram (which you already have open), send a message, and it appears in your vault as a properly formatted note — correct folder, frontmatter, wikilinks to related notes, added to the Map of Content. Zero manual filing.
+**Capture** — you have a thought while doing something else. Open Telegram, send a message, and it appears in your vault as a properly formatted note — correct folder, frontmatter, wikilinks to related notes, added to the Map of Content. Zero manual filing.
 
-**Retrieval** — you remember writing something about a topic but can't find it. Instead of searching Obsidian with keywords, you ask the bot in plain language: *"що я думав про CQRS?"* — it finds semantically relevant notes and gives you a synthesized answer with citations, even if your notes never contained the exact words you typed.
+**Retrieval** — you remember writing something about a topic but can't find it. Ask the bot in plain language: *"що я думав про CQRS?"* — it finds semantically relevant notes and gives you a synthesized answer with citations, even if your notes never contained the exact words you typed.
 
 ---
 
@@ -22,60 +22,100 @@ BrainSync solves two problems: **capture** and **retrieval**.
 
 | What you send | What happens |
 |---------------|--------------|
-| Plain text message | AI classifies → formats → saves as note |
-| Text with inline prefix (`task:`, `ідея:`) | Forced type, skips classification |
+| Plain text message | AI semantic router → classifies intent → formats → saves |
+| Text with inline prefix (`task:`, `ідея:`) | Forced type, skips AI routing |
 | Voice message | On-device transcription (Whisper) → note |
 | Photo | AI visual description → note |
 | PDF file | Full text extracted locally → note |
 | `.txt` / `.md` file | Content saved directly as note |
+| YouTube URL | NotebookLM session → Q&A → save to vault |
+| Any bare URL | Web page fetched, AI-summarised → note |
 
 ### Intelligence
 
-- **Intent detection** — every plain-text message is automatically classified as a question about the vault, a search request, or a new note. No slash commands needed.
-- **Semantic search** — `/search` and natural language search queries use vector embeddings; finds notes by meaning, not exact words. Works in Ukrainian.
+- **AI Semantic Router** — every plain-text message goes through a single AI call that returns an `ActionPlan`: intent, target folder (4-level hierarchy), note type, tags, title, and whether to save, search, or answer.
+- **Semantic search** — `/search` and natural language queries use vector embeddings; finds notes by meaning, not exact words. Works in Ukrainian.
 - **RAG answers** — questions about your vault get synthesized answers grounded exclusively in your own notes, with source citations.
-- **Duplicate detection** — after every note save, the bot checks for semantically similar existing notes (≥ 70% similarity) and warns you.
-- **Three AI processing modes** — `minimal` (fast, 0–1 calls), `balanced` (classify + format), `full` (+ automatic wikilinks to related notes).
+- **Duplicate detection** — after every note save, checks for semantically similar existing notes (≥ 85% similarity) and offers to merge.
+- **Smart note splitting** — if a message covers multiple unrelated topics, AI automatically splits it into separate notes.
+- **Web clipping** — paste any URL; the bot fetches the page and AI-summarises it into a structured vault note.
+- **YouTube × NotebookLM** — paste a YouTube URL to open an interactive Q&A session powered by NotebookLM; save the session as a vault note when done.
+- **Knowledge gap analysis** — `/gaps <topic>` asks AI to identify missing subtopics in your vault for a given subject.
+
+### Vault management
+
+- **Map of Content** — index files auto-updated every time a note is added to a topic
+- **4-level folder hierarchy** — `GeneralCategory/Topic/Subtopic/Section`
+- **Auto wikilinks** — related notes automatically linked to each other on save
+- **Vault health check** — `/health` reports orphan notes, broken links, missing aliases, and potential duplicates
+- **Note merge** — merge a new note with an existing duplicate via inline button (with confirmation dialog)
+- **Note move** — move notes to different folders via `/move` command or inline button after save
+- **Tag management** — add tags to any saved note via inline button
+- **Group Topics** — map Telegram Forum Topic threads to vault folders; `/register-topic` once per thread
+
+### Gamification
+
+- **XP system** — earn XP for every note saved
+- **Streaks** — daily streak tracking with notifications at 3, 7, 14, 30, 100 days
+- **Milestones** — achievements at 10, 25, 50, 100, 250, 500, 1000 notes
+- **Levels** — Beginner → Note Taker → Chronicler → Knowledge Builder → Archivist → Vault Master → Grand Sage
+
+### Analytics & Visualization
+
+- **`/stats`** — total notes, per-folder bar chart, 30-day activity line chart, XP/streak; sends as PNG chart if matplotlib installed
+- **`/graph`** — knowledge graph PNG showing wikilink connections between notes, colored by folder; requires `networkx` + `matplotlib`
+- **Scheduled summaries** — daily text digest; weekly and monthly reports include 2–3 panel PNG charts (notes by topic, daily activity, type breakdown, month-over-month comparison)
 
 ### Automation
 
-- **Map of Content** — index files auto-updated every time a note is added to a topic
 - **Git sync** — vault auto-committed and pushed after every note (configurable interval)
-- **Scheduled digests** — daily, weekly, and monthly summaries sent to Telegram
+- **Stale task reminder** — configurable daily reminder for tasks open longer than N days
+- **Hot reload** — `/reload` reloads `config.yaml` without restarting the bot
 - **MCP server** — exposes vault operations to Claude Code sessions
+
+### UX
+
+- **Progress indicator** — `⏳ Thinking…` message shown during AI processing, deleted when result arrives
+- **Inline keyboards** — actionable buttons after every note save: [📁 Move] [🏷️ Tags]; duplicate detected: [🔀 Merge] [✅ Keep both]
+- **Merge confirmation** — destructive merge operation always requires [✅ Confirm] [❌ Cancel]
+- **`/settings`** — inline keyboard to toggle auto-commit, wikilinks, MoC, daily summary; changes persist to `config.yaml`
+- **`/today`** — today's notes + all open tasks at a glance
 
 ### Infrastructure
 
-- **Fully offline capable** — sentence-transformers backend for embeddings, Ollama for AI, Whisper for voice; no external API calls required
-- **Vector index persists** — ChromaDB stores embeddings locally in `data/chroma/`; index survives restarts
-- **Background indexing** — vault is indexed at startup without blocking the bot
+- **Fully offline capable** — sentence-transformers for embeddings, Ollama for AI, Whisper for voice
+- **Vector index persists** — ChromaDB stores embeddings in `data/chroma/`; survives restarts
+- **Background indexing** — vault indexed at startup without blocking the bot
 
 ---
 
 ## Prerequisites
 
-Before running BrainSync, make sure you have:
-
-1. **Python 3.12+** — [python.org/downloads](https://python.org/downloads). During installation on Windows, check "Add Python to PATH".
-
-2. **Git** — [git-scm.com](https://git-scm.com). Required for vault auto-commit and for cloning the repo.
-
-3. **ffmpeg** — required for voice message decoding.
+1. **Python 3.12+** — [python.org/downloads](https://python.org/downloads). Check "Add Python to PATH" during install on Windows.
+2. **Git** — [git-scm.com](https://git-scm.com)
+3. **ffmpeg** — required for voice message decoding:
    ```
    winget install ffmpeg        # Windows
    brew install ffmpeg          # macOS
    sudo apt install ffmpeg      # Ubuntu/Debian
    ```
-
-4. **An Obsidian vault** — an existing folder where your `.md` notes live. Example: `C:\SecondaryBrain`. The Obsidian app does not need to be running.
-
-5. **A Telegram bot** — create one via [@BotFather](https://t.me/BotFather) and copy the token.
-
-6. **Your Telegram user ID** — get it from [@userinfobot](https://t.me/userinfobot).
-
+4. **An Obsidian vault** — an existing folder where your `.md` notes live. The Obsidian app does not need to be running.
+5. **A Telegram bot** — create via [@BotFather](https://t.me/BotFather), copy the token.
+6. **Your Telegram user ID** — get from [@userinfobot](https://t.me/userinfobot).
 7. **AI provider** — either:
    - [Anthropic API key](https://console.anthropic.com) (cloud, requires internet)
    - [Ollama](https://ollama.com) running locally (fully offline, free)
+
+**Optional** (for charts and graph):
+```bash
+pip install networkx matplotlib numpy
+```
+
+**Optional** (for YouTube × NotebookLM):
+```bash
+pip install "notebooklm-py[browser]"
+notebooklm login    # one-time Google auth via browser
+```
 
 ---
 
@@ -88,52 +128,24 @@ git clone https://github.com/vvvolodymyrPanasiuk/BrainSync.git
 cd BrainSync
 ```
 
-Double-click **`start.bat`**.
-
-The script will:
-1. Check that Python 3.12+ is available
-2. Install [`uv`](https://github.com/astral-sh/uv) (fast package manager) if needed
-3. Install all dependencies into an isolated virtual environment
-4. Launch the interactive setup wizard on first run
-
-On every subsequent run, if `config.yaml` already exists, setup is skipped and the bot starts immediately.
+Double-click **`start.bat`**. The script installs `uv`, creates a virtual environment, installs dependencies, and launches the setup wizard on first run.
 
 ### Option B: Manual
 
 ```bash
-# 1. Clone
 git clone https://github.com/vvvolodymyrPanasiuk/BrainSync.git
 cd BrainSync
-
-# 2. Install uv (replaces pip + venv)
 pip install uv
-
-# 3. Install dependencies (creates .venv automatically)
 uv sync
-
-# 4. Run the interactive setup wizard
-uv run python setup.py
-
-# 5. Start the bot
+uv run python setup.py    # interactive setup wizard
 uv run python main.py
 ```
-
-### New dependencies for semantic search
-
-If you cloned before the semantic search feature was added, install the new packages:
-
-```bash
-pip install chromadb sentence-transformers
-```
-
-> The `sentence-transformers` model (~120 MB) downloads automatically on first start.
-> ChromaDB stores the vector index locally in `data/chroma/` — it's gitignored.
 
 ---
 
 ## First run
 
-When you run `setup.py`, it will ask:
+`setup.py` will ask:
 
 | Question | Example answer |
 |----------|---------------|
@@ -143,40 +155,13 @@ When you run `setup.py`, it will ask:
 | Telegram bot token | `7123456789:AAF...` |
 | Your Telegram user ID | `123456789` |
 
-The wizard creates `config.yaml` in the project root. That file is gitignored — it will never be committed.
-
----
-
-## Starting the bot
-
-```bash
-# Windows (recommended)
-start.bat
-
-# macOS / Linux
-bash start.sh
-
-# Direct
-uv run python main.py
-```
-
-On first start you'll see:
-
-```
-INFO  BrainSync starting — mode=balanced provider=anthropic
-INFO  Vault index built: 47 notes, 8 topics
-INFO  VectorStore initialised at data/chroma
-INFO  Background vault indexing started
-INFO  Telegram bot starting...
-```
-
-The bot sends you a Telegram message when the Whisper model finishes loading and it's ready to accept messages. While the vector index is being built in the background, the bot is fully responsive — queries during indexing use a partial index and show a soft notice.
-
-Press `Ctrl+C` to stop.
+The wizard creates `config.yaml` (gitignored — never committed).
 
 ---
 
 ## Bot commands
+
+### Notes
 
 | Command | Description |
 |---------|-------------|
@@ -184,17 +169,42 @@ Press `Ctrl+C` to stop.
 | `/task <text>` | Save a task |
 | `/idea <text>` | Save an idea |
 | `/journal <text>` | Save a journal entry |
+| `/clip <url>` | Fetch a web page, AI-summarise, and save as note |
+
+### Vault
+
+| Command | Description |
+|---------|-------------|
 | `/search <query>` | Semantic vault search |
+| `/today` | Today's saved notes + all open tasks |
+| `/health` | Vault health check: orphans, broken links, missing aliases, duplicates |
+| `/move <topic> -> <folder>` | Move a note to a different folder |
+| `/merge` | Merge newest note with detected duplicate (shows confirmation dialog) |
+| `/stats` | Vault statistics with bar/line charts (PNG if matplotlib installed) |
+| `/graph` | Knowledge graph PNG of wikilink connections (requires networkx + matplotlib) |
+| `/gaps <topic>` | AI analysis of missing subtopics in your vault for a given subject |
+
+### Groups & Routing
+
+| Command | Description |
+|---------|-------------|
+| `/register-topic <FolderName>` | Map current Telegram Forum Topic thread to a vault folder |
+
+### System
+
+| Command | Description |
+|---------|-------------|
+| `/settings` | Inline settings menu — toggle auto-commit, wikilinks, MoC, daily summary |
+| `/status` | Bot status, session stats, AI provider info |
+| `/reload` | Hot-reload `config.yaml` without restarting the bot |
 | `/reindex` | Rebuild the vector index from all vault notes |
-| `/mode minimal\|balanced\|full` | Change processing mode |
-| `/status` | Show bot status and session stats |
-| `/help` | List all commands |
+| `/help` | Full command reference |
 
 ---
 
 ## Inline prefixes
 
-You don't need a slash command. Add a prefix at the start of any message (or as a media caption):
+Add a prefix at the start of any message (or media caption) to force a note type:
 
 ```
 note: ...       нотатка: ...
@@ -203,176 +213,115 @@ idea: ...       ідея: ...
 journal: ...    день: ...
 ```
 
-Prefix matching is case-insensitive and works on voice captions, photo captions, and file captions.
-
-Any plain message **without** a prefix or slash command is routed through intent detection (see below).
+Any plain message **without** a prefix or slash command is routed through the AI semantic router.
 
 ---
 
-## Sending media
+## Media
 
 ### Voice messages
-
-Hold the mic button in Telegram and send a voice message. BrainSync:
-1. Downloads the `.ogg` file
-2. Transcribes it on-device via Whisper (Ukrainian supported)
-3. Saves the transcription as a note
-
-Add a caption to force a type: `задача:` as a voice caption saves the transcription as a task.
-
-**Limits:** configurable via `media.max_voice_duration_seconds` (default 300s).
-
-**Model download:** on first start, the Whisper `small` model (~466 MB) downloads automatically. The bot sends you a Telegram notification. After that, model loads from local cache instantly.
+Hold mic → BrainSync transcribes on-device via Whisper (Ukrainian supported) → saves as note.
+Limit: `media.max_voice_duration_seconds` (default 300s). Whisper `small` model (~466 MB) downloads on first use.
 
 ### Photos
-
-Send any photo. BrainSync:
-1. Downloads the image
-2. Sends it to the AI for visual description
-3. Saves the description as a note
-
-Requires `ollama_vision_model` set (e.g. `llava`) if using Ollama, or any Claude model if using Anthropic. If the provider doesn't support vision, the bot saves the caption only and warns you.
+BrainSync sends the image to AI for visual description → saves as note.
+Requires `ollama_vision_model` (e.g. `llava`) or an Anthropic model.
 
 ### PDFs
-
-Attach any PDF file. BrainSync:
-1. Extracts the full text locally using `pypdf` (no internet)
-2. Sends the first 3 000 characters to AI for classification and title generation
-3. Saves the **full** extracted text to the vault
-
-**Limits:** configurable via `media.pdf_max_pages` (default 50) and `media.max_file_size_mb` (default 20).
+Full text extracted locally via `pypdf` → first 3 000 chars sent to AI for classification → full text saved to vault.
+Limits: `media.pdf_max_pages` (default 50), `media.max_file_size_mb` (default 20).
 
 ### Plain text / Markdown files
+Attach `.txt` or `.md` → content saved as note directly.
 
-Attach a `.txt` or `.md` file. The content is saved as a note directly.
+### YouTube URLs
+Send a bare YouTube URL → BrainSync creates a NotebookLM notebook, adds the video as source, and enters interactive Q&A mode. Each message in the session is answered by NotebookLM. Press **💾 Save to vault** to save the session as a note; the notebook is deleted after save. Requires `notebooklm-py`.
+
+### Bare URLs (web clip)
+Send any `https://...` URL that isn't YouTube → BrainSync fetches the page, extracts text, AI-summarises into a structured note, and saves it.
 
 ---
 
-## Natural language vault interaction
+## AI Semantic Router
 
-This is the intelligence layer. Every plain-text message without a prefix goes through intent detection before being processed.
+Every plain-text message (without prefix) goes through a single AI call that returns an `ActionPlan`:
 
-### How intent detection works
+| Field | Example |
+|-------|---------|
+| `intent` | `CREATE_NOTE`, `ANSWER_FROM_VAULT`, `SEARCH_VAULT`, `MOVE_NOTE`, … |
+| `target_folder` | `"Technology/Python"` |
+| `note_type` | `"note"`, `"task"`, `"idea"`, `"journal"` |
+| `tags` | `["python", "async"]` |
+| `title` | `"Asyncio event loop internals"` |
+| `should_save` | `true` / `false` |
 
-The bot makes one AI call to classify your message into one of three intents:
+Intents and what happens:
 
-| Intent | Trigger examples | What happens |
-|--------|-----------------|--------------|
-| `rag_query` | "що я думав про CQRS?", "як я вирішував проблему кешування?" | Vault search + AI synthesizes answer |
-| `search_query` | "знайди нотатки про архітектуру", "є щось про Redis?" | Vault search → ranked result list |
-| `new_note` | "CQRS розділяє read і write" (statement, not question) | Classified and saved as a note |
+| Intent | Behaviour |
+|--------|-----------|
+| `CREATE_NOTE` | Format → enrich with wikilinks → write → MoC → duplicate check |
+| `ANSWER_FROM_VAULT` | RAG: vector search → AI synthesizes answer from your notes |
+| `SEARCH_VAULT` | Semantic search → ranked results list |
+| `CHAT_ONLY` | General conversation, no vault interaction |
+| `SEARCH_WEB` | DuckDuckGo search → AI-synthesized answer |
+| `MOVE_NOTE` | Find note semantically → move to target folder |
+| `APPEND_NOTE` | Find closest note → append content |
+| `UPDATE_NOTE` | Find closest note → rewrite with new info |
+| `REQUEST_CLARIFICATION` | Ask one follow-up question; next reply resolves the action |
+| `IGNORE_SPAM` | Silently discard |
 
-If the AI provider is unavailable or the vector index isn't built yet, the bot falls back to saving everything as a note (safe default).
+---
 
-### Asking questions about your vault (RAG)
+## Duplicate detection & merge
 
-```
-You: що я думав про CQRS?
+After every save, BrainSync checks cosine similarity against existing notes:
 
-Bot: 💡 На основі твого vault:
+- **≥ 85%** — duplicate warning + [🔀 Merge] [✅ Keep both] buttons
+- **70–84%** — related note suggestion
 
-     CQRS розділяє команди (write) і запити (read) у різні моделі.
-     Я писав, що це найкраще застосовувати коли read і write
-     мають різні вимоги до продуктивності.
+Clicking **Merge** shows a confirmation dialog. On confirm, AI merges the two notes (preserves frontmatter from the existing note, deduplicates body), deletes the new file, and updates the vector store.
 
-     Джерела:
-     → Architecture/0004 CQRS pattern.md
-     → Architecture/0007 Event Sourcing.md
-```
+Thresholds configurable in `config.yaml` under `embedding`.
 
-The answer is synthesized **only from your notes** — the AI is explicitly instructed not to use general knowledge. If nothing relevant is found:
+---
 
-```
-Bot: 🔍 Нічого не знайдено у vault за цим запитом.
-```
+## Gamification
 
-### Semantic search
+Stored in `<vault>/.brainsync/gamification.json`. Shown in `/stats`.
 
-```
-You: знайди нотатки про управління часом
+| Level | XP required |
+|-------|-------------|
+| Beginner | 0 |
+| Note Taker | 100 |
+| Chronicler | 300 |
+| Knowledge Builder | 600 |
+| Archivist | 1 000 |
+| Vault Master | 2 000 |
+| Grand Sage | 5 000 |
 
-Bot: 🔍 Знайдено 3 нотатки для "управління часом":
-
-     1. Productivity/0008 deep work notes.md (89%)
-        ...deep work — стан потоку без відволікань...
-
-     2. Productivity/0012 morning routine.md (74%)
-        ...ранковий ритуал допомагає структурувати день...
-
-     3. General/0003 book summary.md (71%)
-        ...четверта година дня найбільш продуктивна...
-```
-
-Works even when the exact words don't appear in any note — search is by semantic meaning, not keywords.
-
-Same results for `/search управління часом`.
-
-### Duplicate detection
-
-After every note save, BrainSync checks for semantically similar existing notes:
-
-```
-You: CQRS is a pattern where read and write models are separated
-
-Bot: ✓ Saved → Architecture/0011 CQRS notes.md
-
-     ⚠️ Схожа нотатка вже існує:
-     → Architecture/0004 CQRS pattern.md (91%)
-```
-
-Or for related (not duplicate) notes:
-
-```
-Bot: ✓ Saved → Productivity/0015 focus tips.md
-
-     💡 Можливо пов'язана нотатка:
-     → Productivity/0008 deep work notes.md (74%)
-```
-
-Thresholds: ≥ 85% = duplicate warning, 70–84% = related suggestion. Configurable in `config.yaml`.
-
-### Rebuilding the index
-
-If you added notes directly in Obsidian (outside the bot), run `/reindex`:
-
-```
-You: /reindex
-
-Bot: ⏳ Переіндексація vault…
-Bot: ✅ Переіндексовано: 63 нотатки.
-```
+Streak notifications fire at 3, 7, 14, 30, 100 days. Milestone notifications fire at 10, 25, 50, 100, 250, 500, 1 000 notes.
 
 ---
 
 ## Configuration reference
 
-`config.yaml` is generated by `setup.py` and is never committed. Add the `embedding:` block manually if you're upgrading from an older version.
+`config.yaml` is generated by `setup.py` and is never committed.
 
 ### AI settings
 
 ```yaml
 ai:
   provider: "anthropic"           # "anthropic" | "ollama"
-  model: "claude-sonnet-4-6"      # Used for all AI calls (classification, formatting, RAG)
+  model: "claude-sonnet-4-6"
   ollama_url: "http://localhost:11434"
-  ollama_vision_model: ""         # Ollama vision model for photos — e.g. "llava"
-  processing_mode: "balanced"     # "minimal" | "balanced" | "full"
+  ollama_vision_model: ""         # e.g. "llava" — for photo descriptions
+  ollama_timeout: 900             # seconds (increase for slow hardware / thinking models)
   agents_file: ".brain/AGENTS.md"
   skills_path: ".brain/skills/"
-  inject_vault_index: true        # Pass known topics to AI during classification
+  inject_vault_index: true
   max_context_tokens: 4000
   api_key: ""                     # Never logged, never committed
 ```
-
-**Processing modes:**
-
-| Mode | AI calls | What happens |
-|------|----------|--------------|
-| `minimal` | 0–1 | Classification only (skipped if prefix used) |
-| `balanced` | 1–2 | Classification + content formatting |
-| `full` | 2–3 | Classification + formatting + auto wikilinks |
-
-Change at runtime with `/mode balanced`. Takes effect after restart.
 
 ### Vault settings
 
@@ -382,47 +331,43 @@ vault:
   language: "uk"                  # Language hint for AI prompts
 ```
 
-### Embedding / semantic search settings
+### Embedding / semantic search
 
 ```yaml
 embedding:
   backend: "sentence-transformers"          # "sentence-transformers" | "ollama"
-  model: "paraphrase-multilingual-MiniLM-L12-v2"  # Multilingual, works with Ukrainian
-  ollama_embed_url: "http://localhost:11434"       # Only used if backend = "ollama"
-  index_path: "data/chroma"                        # Where ChromaDB stores vectors
-  similarity_duplicate_threshold: 0.85             # ≥ this → "Схожа нотатка" warning
-  similarity_related_threshold: 0.70               # ≥ this → "Пов'язана нотатка" notice
-  top_k_results: 5                                 # Max results for search/RAG
+  model: "paraphrase-multilingual-MiniLM-L12-v2"
+  ollama_embed_url: "http://localhost:11434"
+  index_path: "data/chroma"
+  similarity_duplicate_threshold: 0.85      # ≥ this → duplicate warning
+  similarity_related_threshold: 0.70        # ≥ this → related notice
+  top_k_results: 5
 ```
 
-**Ollama embedding backend** — if you prefer to use Ollama for embeddings:
-
+Use Ollama embeddings (fully offline):
 ```bash
 ollama pull nomic-embed-text
 ```
-
-Then change `backend: "ollama"` and `model: "nomic-embed-text"` in `config.yaml`, and run `/reindex`.
+Then set `backend: "ollama"` and `model: "nomic-embed-text"`, run `/reindex`.
 
 ### Media settings
 
 ```yaml
 media:
   max_voice_duration_seconds: 300
-  transcription_model: "small"    # Whisper sizes: tiny / base / small / medium / large-v3
+  transcription_model: "small"    # tiny / base / small / medium / large-v3
   pdf_max_pages: 50
   pdf_ai_context_chars: 3000
   max_file_size_mb: 20
 ```
 
-Whisper model sizes and trade-offs:
-
-| Model | Size | Speed | Accuracy |
-|-------|------|-------|----------|
-| `tiny` | ~75 MB | Fast | Low |
-| `base` | ~145 MB | Fast | OK |
-| `small` | ~466 MB | Medium | Good (recommended) |
-| `medium` | ~1.5 GB | Slow | Very good |
-| `large-v3` | ~3 GB | Very slow | Best |
+| Whisper model | Size | Accuracy |
+|---------------|------|----------|
+| `tiny` | ~75 MB | Low |
+| `base` | ~145 MB | OK |
+| `small` | ~466 MB | Good (default) |
+| `medium` | ~1.5 GB | Very good |
+| `large-v3` | ~3 GB | Best |
 
 ### Enrichment settings
 
@@ -439,7 +384,7 @@ enrichment:
 ```yaml
 telegram:
   bot_token: ""
-  allowed_user_ids: [123456789]   # Only these IDs can interact with the bot
+  allowed_user_ids: [123456789]
 ```
 
 ### Git settings
@@ -461,20 +406,20 @@ git:
 schedule:
   daily_summary:
     enabled: true
-    time: "21:00"
+    time: "21:00"             # Plain text digest: today's notes + open tasks
   weekly_review:
     enabled: true
     day: "sunday"
-    time: "20:00"
+    time: "20:00"             # PNG chart: notes by topic + daily activity
   monthly_review:
     enabled: true
     day: 1
-    time: "10:00"
+    time: "10:00"             # PNG chart: this vs last month + types pie + activity
+  stale_task_reminder:
+    enabled: false
+    days: 7                   # Remind about tasks open longer than N days
+    time: "09:00"
 ```
-
-- **Daily** — today's notes + all open tasks (`- [ ] ...`) across task-type notes
-- **Weekly** — note count by topic for the past 7 days
-- **Monthly** — notes added this month + new topics introduced
 
 ### Prefix settings
 
@@ -491,24 +436,27 @@ prefixes:
 ```yaml
 logging:
   level: "info"
-  log_to_file: true
   log_path: "logs/vault.log"
-  log_ai_decisions: true          # Logs type + folder + confidence only, never note content
+  log_ai_decisions: true      # Logs type + folder + confidence only — never note content
 ```
 
 ---
 
 ## Note format
 
-Every note created by BrainSync follows this structure:
+Every note created by BrainSync:
 
 ```markdown
 ---
 title: "CQRS Pattern"
 date: 2026-03-30
 categories: [Architecture]
-tags: [areas/architecture, types/notes]
+tags:
+  - areas/architecture
+  - types/note
 MoC: "[[0 Architecture]]"
+aliases:
+  - CQRS Pattern
 ---
 
 ## Description
@@ -528,20 +476,19 @@ requirements. Pairs naturally with Event Sourcing.
 ```
 
 **Naming:** `NNNN Title.md` — 4-digit zero-padded sequential number per folder.
-**MoC files:** `0 TopicName.md` — always at the root of their folder, excluded from note numbering and vector indexing.
+**Location:** `<vault>/<GeneralCategory>/<Topic>/<Subtopic>/<Section>/_data/NNNN Title.md`
+**MoC files:** `0 TopicName.md` — auto-created at each folder level.
 
 ---
 
 ## Running fully offline
 
-BrainSync can run without any internet connection or paid API:
-
 1. Install and start [Ollama](https://ollama.com)
 2. Pull models:
    ```bash
-   ollama pull mistral              # or any other text model
+   ollama pull mistral
    ollama pull llava                # for photo descriptions
-   ollama pull nomic-embed-text     # for embeddings (alternative to sentence-transformers)
+   ollama pull nomic-embed-text     # optional: Ollama embeddings
    ```
 3. In `config.yaml`:
    ```yaml
@@ -550,11 +497,8 @@ BrainSync can run without any internet connection or paid API:
      model: "mistral"
      ollama_vision_model: "llava"
    embedding:
-     backend: "sentence-transformers"   # works offline without Ollama
-     # or: backend: "ollama"
-     # model: "nomic-embed-text"
+     backend: "sentence-transformers"   # works offline
    ```
-4. Start BrainSync normally
 
 Whisper voice transcription is always offline regardless of AI provider.
 
@@ -566,55 +510,59 @@ Whisper voice transcription is always offline regardless of AI provider.
 BrainSync/
 │
 ├── main.py                        # Entry point — starts the Telegram bot
-├── setup.py                       # Interactive installer
-├── start.bat / start.sh           # Launch scripts (detect Python, install uv, start)
+├── setup.py                       # Interactive installer / config wizard
+├── start.bat / start.sh           # Launch scripts
 ├── config.yaml                    # Generated by setup.py — gitignored
 │
 ├── config/
-│   └── loader.py                  # Parses config.yaml → AppConfig dataclasses
-│                                  # EmbeddingConfig, MediaConfig, factory functions
+│   └── loader.py                  # config.yaml → AppConfig dataclasses + validation
 │
-├── vault_writer/                  # Core library — shared by both processes
+├── vault_writer/                  # Core library
 │   ├── server.py                  # MCP server (standalone process, stdio transport)
 │   │
 │   ├── ai/
-│   │   ├── provider.py            # AIProvider ABC + ProcessingMode enum
+│   │   ├── provider.py            # AIProvider ABC
 │   │   ├── anthropic_provider.py  # Claude text + vision
 │   │   ├── ollama_provider.py     # Ollama text + vision
 │   │   ├── transcriber.py         # Whisper on-device voice transcription
-│   │   ├── classifier.py          # classify() → ClassificationResult
+│   │   ├── router.py              # AI Semantic Router → ActionPlan (single AI call)
+│   │   ├── classifier.py          # ClassificationResult for legacy path
 │   │   ├── formatter.py           # format_note() → structured markdown
-│   │   └── enricher.py            # add_wikilinks() (full mode only)
-│   │
-│   ├── media/
-│   │   └── pdf_extractor.py       # Local PDF text extraction via pypdf
+│   │   ├── enricher.py            # AI-powered content enrichment
+│   │   └── linker.py              # Wikilink injection + retroactive linking
 │   │
 │   ├── rag/
-│   │   ├── embedder.py            # EmbeddingProvider ABC + SentenceTransformers + Ollama
-│   │   ├── vector_store.py        # ChromaDB wrapper (upsert, search, find_similar, reindex)
-│   │   ├── intent.py              # classify_intent() → IntentType (rag/search/note)
-│   │   └── engine.py              # answer_query(), search_vault(), RAGResult, SearchResult
+│   │   ├── embedder.py            # EmbeddingProvider (sentence-transformers + Ollama)
+│   │   ├── vector_store.py        # ChromaDB wrapper (upsert, search, find_similar)
+│   │   └── engine.py              # answer_query(), search_vault()
 │   │
 │   ├── vault/
 │   │   ├── writer.py              # write_note(), update_moc(), sequential numbering
-│   │   ├── reader.py              # read_frontmatter(), read_note_content()
-│   │   └── indexer.py             # build_index(), update_index() → VaultIndex
+│   │   ├── indexer.py             # build_index(), update_index() → VaultIndex
+│   │   └── structure.py           # Folder registration
 │   │
-│   └── tools/                     # MCP tool handlers
+│   └── tools/
 │       ├── create_note.py         # Orchestrator: classify→format→enrich→write→MoC→upsert
-│       ├── search_notes.py        # Keyword full-text search (zero AI calls)
-│       ├── classify_content.py    # Text classification
+│       ├── executor.py            # ActionPlan executor (all intents)
+│       ├── gamification.py        # XP, streaks, milestones, levels
+│       ├── health.py              # Vault health check (orphans, broken links, duplicates)
+│       ├── web_clip.py            # URL fetcher + text extractor
+│       ├── search_notes.py        # Keyword full-text search
 │       ├── update_moc.py          # Map of Content updater
 │       └── get_vault_index.py     # Vault index snapshot
 │
 ├── telegram/
-│   ├── bot.py                     # PTB Application setup, handler registration
-│   ├── formatter.py               # All message formatters (RAG, search, similarity, etc.)
+│   ├── bot.py                     # PTB Application setup, all handler registration
+│   ├── keyboards.py               # All InlineKeyboardMarkup builders
+│   ├── formatter.py               # All message formatters
+│   ├── i18n.py                    # Locale strings (en + uk)
 │   └── handlers/
-│       ├── commands.py            # All slash command handlers (+ /reindex)
-│       ├── message.py             # Intent routing: RAG / search / new note
+│       ├── commands.py            # All slash command handlers
+│       ├── message.py             # Plain-text routing: prefix / YouTube / URL / AI router
 │       ├── media.py               # Voice / photo / PDF / text file handlers
-│       └── schedule.py            # Daily / weekly / monthly digest jobs
+│       ├── callbacks.py           # InlineKeyboard callback dispatcher
+│       ├── youtube_chat.py        # YouTube × NotebookLM session handler
+│       └── schedule.py            # Daily / weekly / monthly digest jobs + charts
 │
 ├── git_sync/
 │   └── sync.py                    # commit_note() + push_if_due()
@@ -626,7 +574,7 @@ BrainSync/
     ├── AGENTS.md                  # AI instructions injected into every prompt
     └── skills/
         ├── vault-writer.md        # Folder naming, numbering, MoC rules
-        ├── classifier.md          # Classification guidelines + JSON output format
+        ├── classifier.md          # Classification guidelines
         └── obsidian-rules.md      # Frontmatter schema, tags, wikilink syntax
 ```
 
@@ -634,39 +582,49 @@ BrainSync/
 
 ## Message routing flow
 
-How a plain-text message gets processed end-to-end:
-
 ```
 Plain text received
        │
-       ▼
-  auth_check()          Reject if user_id not in allowed_user_ids
+       ├─ Active YouTube session? → handle_question() → NotebookLM Q&A
        │
-       ▼
-  detect_prefix()       "task: ..." → forced NoteType, skip classification
+       ├─ Bare YouTube URL? → start_session() → NotebookLM notebook created
        │
-  [no prefix]
+       ├─ Bare URL? → _do_clip() → fetch + AI summarise → save note
        │
-       ▼
-  classify_intent()     1 AI call → rag_query / search_query / new_note
+       ├─ Pending inline action (move/tags)? → _handle_pending_inline()
        │
-  ┌────┴─────────────────────────┐
-  │                              │                       │
-rag_query               search_query                new_note
-  │                              │                       │
-answer_query()          search_vault()          classify() → format_note()
-  │                              │              write_note() → update_moc()
-RAGResult               list[SearchResult]      upsert_note() → find_similar()
-  │                              │                       │
-reply with              reply ranked            reply confirmation
-answer + citations      results + scores        + similarity notices
+       ├─ Group topic thread? → inject [Topic: Name] context prefix
+       │
+       ├─ Has prefix (задача:/note:/...)? → forced NoteType → save (no AI router)
+       │
+       └─ AI required?
+              │
+              ▼
+         ⏳ Thinking… (progress message sent)
+              │
+              ▼
+         _route() → ActionPlan (1 AI call)
+              │
+              ▼
+         execute(plan) → dispatcher
+              │
+    ┌─────────┼──────────────────────────────────┐
+    │         │                                  │
+CREATE_NOTE  ANSWER_FROM_VAULT           SEARCH_VAULT / CHAT / WEB …
+    │         │
+format+write  vector search
++duplicate    +AI answer
+check         +citations
+    │
+[📁 Move][🏷️ Tags] inline buttons
+(or [🔀 Merge] if duplicate ≥ 85%)
 ```
 
 ---
 
 ## Using as a Claude Code MCP server
 
-`vault_writer/server.py` registers as an MCP server in Claude Code sessions. Add to your project's `.claude/mcp_servers.json`:
+`vault_writer/server.py` registers as an MCP server. Add to `.claude/mcp_servers.json`:
 
 ```json
 {
@@ -679,26 +637,19 @@ answer + citations      results + scores        + similarity notices
 }
 ```
 
-Available MCP tools:
-
-| Tool | Description |
-|------|-------------|
-| `create_note` | Full pipeline: classify → format → write → update MoC → index |
-| `search_notes` | Keyword full-text search |
-| `classify_content` | Return type, folder, and title for any text |
-| `update_moc` | Manually update a Map of Content file |
-| `get_vault_index` | Get a snapshot of all known topics and note counts |
+Available MCP tools: `create_note`, `search_notes`, `classify_content`, `update_moc`, `get_vault_index`.
 
 ---
 
 ## Security
 
 - `config.yaml` is in `.gitignore` — never committed
-- `data/chroma/` is in `.gitignore` — your personal vault embeddings never leave the machine
-- `api_key` and `bot_token` are never written to logs, console, or AI prompts
-- `log_ai_decisions: true` logs only classification metadata (type + folder + confidence) — never note content, never query text
-- The bot silently rejects every user ID not in `allowed_user_ids`
+- `data/chroma/` is in `.gitignore` — vault embeddings never leave the machine
+- `api_key` and `bot_token` are never written to logs or AI prompts
+- `log_ai_decisions: true` logs only classification metadata — never note content or query text
+- All Telegram interactions silently rejected for user IDs not in `allowed_user_ids`
 - Path traversal guard in vault writer — notes can only be written inside `vault.path`
+- `/settings` toggle persists only boolean flags to `config.yaml` — no arbitrary writes
 
 ---
 
@@ -713,8 +664,11 @@ Available MCP tools:
 | `gitpython` | Git operations on the vault |
 | `faster-whisper` | On-device voice transcription |
 | `pypdf` | Local PDF text extraction |
-| `chromadb` | Embedded vector database (local, no server) |
-| `sentence-transformers` | Multilingual text embeddings (offline capable) |
-| `requests` | HTTP calls for Ollama API |
+| `chromadb` | Embedded vector database |
+| `sentence-transformers` | Multilingual text embeddings (offline) |
+| `requests` | HTTP calls for Ollama API and web clipping |
 | `pytest` | Tests |
-| `ffmpeg` (system) | Audio decoding for voice — `winget install ffmpeg` |
+| `ffmpeg` (system) | Audio decoding — `winget install ffmpeg` |
+| `matplotlib` + `numpy` | Charts for `/stats`, `/graph`, scheduled summaries *(optional)* |
+| `networkx` | Knowledge graph generation for `/graph` *(optional)* |
+| `notebooklm-py` | YouTube × NotebookLM integration *(optional)* |
