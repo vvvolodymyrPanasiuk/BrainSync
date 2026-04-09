@@ -71,26 +71,13 @@ def _print_banner() -> None:
 def _start_bot() -> subprocess.Popen:
     """Launch bot_runner.py in a new console window that stays open on exit/error."""
     if sys.platform == "win32":
-        # Wrap in cmd /c so the window always waits for a keypress before closing.
-        # errorlevel check gives a visible banner when the bot crashes.
-        bot_cmd = "uv run python bot_runner.py"
-        wrapper = (
-            f"{bot_cmd} & "
-            f"echo. & "
-            f"if errorlevel 1 ("
-            f"echo ══════════════════════════════════════ & "
-            f"echo  BrainSync crashed — scroll up to read the error. & "
-            f"echo ══════════════════════════════════════"
-            f") else ("
-            f"echo  BrainSync stopped normally."
-            f") & "
-            f"echo. & echo  Press any key to close this window... & pause >nul"
-        )
+        # Use a dedicated .bat wrapper — reliable pause on both crash and normal stop.
+        bat = Path(__file__).parent / "bot_runner.bat"
         return subprocess.Popen(
-            ["cmd", "/c", wrapper],
+            ["cmd", "/c", str(bat)],
             creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP,
         )
-    # macOS / Linux — plain launch, terminal stays open via shell
+    # macOS / Linux
     return subprocess.Popen(["uv", "run", "python", "bot_runner.py"])
 
 
