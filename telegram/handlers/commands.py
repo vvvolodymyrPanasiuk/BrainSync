@@ -795,7 +795,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/move <тема> -> <папка>\n"
         "/merge — злити нотатку з дублікатом\n\n"
         "*Групи*\n"
-        "/register-topic <Папка> — прив'язати топік до vault-папки\n\n"
+        "/registertopic <Папка> — прив'язати топік до vault-папки\n\n"
         "*Система*\n"
         "/settings — налаштування бота\n"
         "/status — статус бота\n"

@@ -42,7 +42,7 @@ def build_application(config, index, stats, provider, vector_store=None) -> Appl
     app.add_handler(CommandHandler("status",         cmd_status))
     app.add_handler(CommandHandler("reload",         cmd_reload))
     app.add_handler(CommandHandler("reindex",        cmd_reindex))
-    app.add_handler(CommandHandler("register-topic", cmd_register_topic))
+    app.add_handler(CommandHandler("registertopic", cmd_register_topic))
     app.add_handler(CommandHandler("settings",       cmd_settings))
     app.add_handler(CommandHandler("stats",          cmd_stats))
     app.add_handler(CommandHandler("graph",          cmd_graph))

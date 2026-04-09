@@ -188,7 +188,7 @@ The wizard creates `config.yaml` (gitignored — never committed).
 
 | Command | Description |
 |---------|-------------|
-| `/register-topic <FolderName>` | Map current Telegram Forum Topic thread to a vault folder |
+| `/registertopic <FolderName>` | Map current Telegram Forum Topic thread to a vault folder |
 
 ### System
 
