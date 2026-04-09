@@ -95,9 +95,16 @@ echo.
 REM ── Launch ─────────────────────────────────────────────────────────────────
 :run
 uv run python main.py
-if errorlevel 1 (
-    echo.
-    echo  BrainSync exited with an error.
-    echo  Check the output above, then press any key to close.
-    pause >nul
+set EXIT_CODE=%errorlevel%
+echo.
+if %EXIT_CODE% neq 0 (
+    echo  ══════════════════════════════════════════
+    echo  BrainSync exited with error code %EXIT_CODE%
+    echo  Scroll up to read the error message.
+    echo  ══════════════════════════════════════════
+) else (
+    echo  BrainSync stopped.
 )
+echo.
+echo  Press any key to close this window...
+pause >nul
