@@ -136,6 +136,92 @@ async def cmd_move(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(reply, parse_mode="Markdown")
 
 
+async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show all notes and open tasks created today."""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+
+    from datetime import date
+    from telegram.handlers.schedule import get_pending_tasks
+
+    index = context.bot_data["index"]
+    today = date.today().isoformat()
+    todays = [n for n in index.notes.values() if n.date == today]
+
+    lines = [f"📅 Today — {today}\n"]
+    if todays:
+        lines.append(f"Notes saved: {len(todays)}")
+        for note in sorted(todays, key=lambda n: n.note_number)[:10]:
+            lines.append(f"  · {note.title}  ({note.folder.split('/')[0]})")
+        if len(todays) > 10:
+            lines.append(f"  … and {len(todays)-10} more")
+    else:
+        lines.append("No notes yet today.")
+
+    pending = get_pending_tasks(config.vault.path, index)
+    if pending:
+        lines.append(f"\n📋 Open tasks: {len(pending)}")
+        for task in pending[:5]:
+            lines.append(f"  - [ ] {task}")
+        if len(pending) > 5:
+            lines.append(f"  … and {len(pending)-5} more")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+async def cmd_reload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reload config.yaml without restarting the bot."""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+    try:
+        from config.loader import load_config
+        new_config = load_config(config.config_path)
+        context.bot_data["config"] = new_config
+        await update.message.reply_text("✅ Config reloaded.")
+    except Exception as exc:
+        logger.error("cmd_reload: %s", exc)
+        await update.message.reply_text(f"❌ Reload failed: `{exc}`", parse_mode="Markdown")
+
+
+async def cmd_register_topic(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Register current forum thread as a vault folder: /register-topic <FolderName>.
+
+    Run this command once inside a Telegram Forum Topic to map that thread
+    to a vault folder (e.g. /register-topic Finance/Trading).
+    """
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+
+    folder = " ".join(context.args).strip() if context.args else ""
+    if not folder:
+        await update.message.reply_text(
+            "Usage: `/register-topic FolderName`\n"
+            "Example: `/register-topic Finance/Trading`",
+            parse_mode="Markdown",
+        )
+        return
+
+    thread_id = getattr(update.message, "message_thread_id", None)
+    if not thread_id:
+        await update.message.reply_text(
+            "❌ This command must be used inside a Forum Topic thread."
+        )
+        return
+
+    chat_id = str(update.message.chat_id)
+    topic_map = context.bot_data.setdefault("topic_map", {})
+    topic_map.setdefault(chat_id, {})[str(thread_id)] = folder
+
+    await update.message.reply_text(
+        f"✅ Thread registered as vault folder: `{folder}`\n"
+        "Messages in this thread will now be routed to that folder.",
+        parse_mode="Markdown",
+    )
+
+
 async def cmd_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Run vault health check and report orphans, broken links, duplicates."""
     config = context.bot_data["config"]
@@ -348,16 +434,22 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     help_text = (
         "📋 BrainSync команди:\n\n"
-        "/note <текст> — зберегти нотатку\n"
-        "/task <текст> — зберегти задачу\n"
-        "/idea <текст> — зберегти ідею\n"
-        "/journal <текст> — запис у щоденник\n"
-        "/clip <url> — зберегти веб-сторінку як нотатку\n"
-        "/search <запит> — пошук у vault\n"
-        "/move <тема> -> <папка> — перемістити нотатку\n"
-        "/merge — об'єднати нотатку з дублікатом\n"
-        "/health — перевірка здоров'я vault\n"
+        "*Нотатки*\n"
+        "/note /task /idea /journal <текст>\n"
+        "/clip <url> — зберегти веб-сторінку\n"
+        "YouTube URL — аналіз відео через NotebookLM\n\n"
+        "*Vault*\n"
+        "/search <запит> — семантичний пошук\n"
+        "/today — нотатки та задачі за сьогодні\n"
+        "/health — перевірка vault\n"
+        "/move <тема> -> <папка>\n"
+        "/merge — злити нотатку з дублікатом\n\n"
+        "*Групи*\n"
+        "/register-topic <Папка> — прив'язати топік до vault-папки\n\n"
+        "*Система*\n"
         "/status — статус бота\n"
+        "/reload — перезавантажити config.yaml\n"
+        "/reindex — переіндексувати vault\n"
         "/help — ця довідка"
     )
     await update.message.reply_text(help_text)

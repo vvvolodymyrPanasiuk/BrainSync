@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import time as _time
 
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 
 def build_application(config, index, stats, provider, vector_store=None) -> Application:
@@ -25,21 +25,28 @@ def build_application(config, index, stats, provider, vector_store=None) -> Appl
     # Command handlers
     from telegram.handlers.commands import (
         cmd_clip, cmd_health, cmd_help, cmd_idea, cmd_journal,
-        cmd_merge, cmd_move, cmd_note, cmd_reindex, cmd_search,
-        cmd_status, cmd_task,
+        cmd_merge, cmd_move, cmd_note, cmd_reindex, cmd_reload,
+        cmd_register_topic, cmd_search, cmd_status, cmd_task, cmd_today,
     )
-    app.add_handler(CommandHandler("note", cmd_note))
-    app.add_handler(CommandHandler("task", cmd_task))
-    app.add_handler(CommandHandler("idea", cmd_idea))
-    app.add_handler(CommandHandler("journal", cmd_journal))
-    app.add_handler(CommandHandler("clip", cmd_clip))
-    app.add_handler(CommandHandler("search", cmd_search))
-    app.add_handler(CommandHandler("move", cmd_move))
-    app.add_handler(CommandHandler("merge", cmd_merge))
-    app.add_handler(CommandHandler("health", cmd_health))
-    app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("reindex", cmd_reindex))
+    app.add_handler(CommandHandler("note",           cmd_note))
+    app.add_handler(CommandHandler("task",           cmd_task))
+    app.add_handler(CommandHandler("idea",           cmd_idea))
+    app.add_handler(CommandHandler("journal",        cmd_journal))
+    app.add_handler(CommandHandler("clip",           cmd_clip))
+    app.add_handler(CommandHandler("search",         cmd_search))
+    app.add_handler(CommandHandler("today",          cmd_today))
+    app.add_handler(CommandHandler("move",           cmd_move))
+    app.add_handler(CommandHandler("merge",          cmd_merge))
+    app.add_handler(CommandHandler("health",         cmd_health))
+    app.add_handler(CommandHandler("status",         cmd_status))
+    app.add_handler(CommandHandler("reload",         cmd_reload))
+    app.add_handler(CommandHandler("reindex",        cmd_reindex))
+    app.add_handler(CommandHandler("register-topic", cmd_register_topic))
+    app.add_handler(CommandHandler("help",           cmd_help))
+
+    # Inline keyboard callback handler
+    from telegram.handlers.callbacks import handle_callback
+    app.add_handler(CallbackQueryHandler(handle_callback))
 
     # Plain-text message handler
     from telegram.handlers.message import handle_message

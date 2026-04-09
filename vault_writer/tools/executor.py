@@ -22,16 +22,20 @@ async def execute(
     stats,
     provider,
     vector_store,
-) -> str:
-    """Execute ActionPlan and return reply string. Never raises — always returns a string."""
+) -> tuple:
+    """Execute ActionPlan and return (reply_text, keyboard | None). Never raises."""
     try:
-        return await _execute_inner(
+        result = await _execute_inner(
             plan, message, update, context, config, index, stats, provider, vector_store
         )
+        # _save_note returns (text, keyboard); all others return plain str
+        if isinstance(result, tuple):
+            return result
+        return result, None
     except Exception as exc:
         logger.error("executor: unhandled error intent=%s: %s", plan.intent.value, exc, exc_info=True)
         from telegram.i18n import t
-        return t("ai_unavailable")
+        return t("ai_unavailable"), None
 
 
 async def _execute_inner(
@@ -451,21 +455,37 @@ async def _save_note(
     if result.get("success"):
         reply = format_confirmation(result["file_path"])
         notices = result.get("similarity_notices", [])
+        has_dup = False
+
         if notices:
             reply += "\n\n" + format_similarity_notice(notices)
-            # Store pending merge for the first duplicate found
             first_dup = next((n for n in notices if n.is_duplicate), None)
             if first_dup and context is not None and context.user_data is not None:
                 context.user_data["pending_merge"] = {
                     "new_path": result["file_path"],
                     "duplicate_path": first_dup.matched_path,
                 }
+                has_dup = True
                 logger.info(
                     "executor: pending merge stored: %s ↔ %s",
                     result["file_path"], first_dup.matched_path,
                 )
-        return reply
-    return f"❌ Error: {result.get('error', 'unknown error')}"
+
+        # ── Gamification ──────────────────────────────────────────────────────
+        try:
+            from vault_writer.tools.gamification import on_note_saved
+            game_notifications = on_note_saved(config.vault.path)
+            if game_notifications:
+                reply += "\n\n" + "\n".join(game_notifications)
+        except Exception as exc:
+            logger.debug("executor: gamification: %s", exc)
+
+        # ── Inline keyboard ───────────────────────────────────────────────────
+        from telegram.keyboards import duplicate_actions, save_actions
+        keyboard = duplicate_actions() if has_dup else save_actions(result["file_path"])
+        return reply, keyboard
+
+    return f"❌ Error: {result.get('error', 'unknown error')}", None
 
 
 async def _move_note(

@@ -35,11 +35,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     index        = context.bot_data["index"]
     stats        = context.bot_data["stats"]
 
-    # ── Bare URL → web clip ───────────────────────────────────────────────────
+    # ── Active YouTube session: consume message as a question ─────────────────
+    from telegram.handlers.youtube_chat import handle_question, has_active_session
+    if has_active_session(context):
+        consumed = await handle_question(update, context)
+        if consumed:
+            return
+
+    # ── Bare YouTube URL → NotebookLM session ─────────────────────────────────
+    if _is_youtube_url(text.strip()):
+        from telegram.handlers.youtube_chat import start_session
+        await start_session(update, context, text.strip())
+        return
+
+    # ── Bare non-YouTube URL → web clip ───────────────────────────────────────
     if _is_bare_url(text.strip()):
         from telegram.handlers.commands import _do_clip
         await _do_clip(update, context, text.strip())
         return
+
+    # ── Pending inline actions (move / tags) ──────────────────────────────────
+    if await _handle_pending_inline(update, context, text):
+        return
+
+    # ── Group topic context: inject folder hint into message ──────────────────
+    text = _inject_topic_context(update, context, text)
 
     # ── Prefix detection (explicit type overrides AI routing) ─────────────────
     note_type, clean_text = detect_prefix(text, config.prefixes)
@@ -70,7 +90,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # ── Executor ──────────────────────────────────────────────────────────────
     from vault_writer.tools.executor import execute
-    reply = await execute(
+    reply, keyboard = await execute(
         plan=plan,
         message=text,
         update=update,
@@ -83,7 +103,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
     if reply:
-        await _reply_with_retry(update, reply)
+        await _reply_with_retry(update, reply, keyboard=keyboard)
 
     # Git commit if a note was saved
     if plan.should_save and stats.last_note_path and config.git.enabled and config.git.auto_commit:
@@ -132,19 +152,23 @@ def _format_save_result(result: dict, config) -> str:
 
 # ── Retry helper ──────────────────────────────────────────────────────────────
 
-async def _reply_with_retry(update: Update, text: str, max_attempts: int = 3) -> None:
-    """Send reply with exponential backoff on RetryAfter errors."""
+async def _reply_with_retry(
+    update: Update, text: str, max_attempts: int = 3, keyboard=None
+) -> None:
+    """Send reply with optional InlineKeyboardMarkup and exponential backoff."""
     from telegram.constants import ParseMode
     for attempt in range(max_attempts):
         try:
-            await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(
+                text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=keyboard,
+            )
             return
         except RetryAfter as exc:
             wait = exc.retry_after if attempt < max_attempts - 1 else None
             if wait is None:
-                await update.message.reply_text(
-                    "⚠️ Telegram API тимчасово недоступний."
-                )
+                await update.message.reply_text("⚠️ Telegram API тимчасово недоступний.")
                 return
             logger.warning("RetryAfter: waiting %ss (attempt %d)", wait, attempt + 1)
             await asyncio.sleep(wait)
@@ -154,9 +178,115 @@ async def _reply_with_retry(update: Update, text: str, max_attempts: int = 3) ->
 
 
 def _is_bare_url(text: str) -> bool:
-    """Return True if the entire message is a single URL (no surrounding text)."""
     import re
     return bool(re.fullmatch(r'https?://\S+', text))
+
+
+def _is_youtube_url(text: str) -> bool:
+    import re
+    return bool(re.match(r'https?://(www\.)?(youtube\.com/watch|youtu\.be/)', text))
+
+
+def _inject_topic_context(update, context, text: str) -> str:
+    """If message is from a forum topic thread, prepend the topic name as context hint.
+
+    Stores topic_name → folder mapping in bot_data['topic_map'][chat_id][thread_id].
+    The router then sees 'Topic: Trading — <message>' and routes to the right folder.
+    """
+    msg = update.message
+    if not (getattr(msg, "is_topic_message", False) and msg.message_thread_id):
+        return text
+
+    chat_id   = str(msg.chat_id)
+    thread_id = str(msg.message_thread_id)
+    topic_map = context.bot_data.setdefault("topic_map", {})
+    topic_name = topic_map.get(chat_id, {}).get(thread_id)
+
+    if not topic_name:
+        return text  # name not yet registered — still process normally
+
+    return f"[Topic: {topic_name}] {text}"
+
+
+async def _handle_pending_inline(update, context, text: str) -> bool:
+    """Handle follow-up text for pending inline actions (move destination / tags).
+
+    Returns True if the message was consumed.
+    """
+    config = context.bot_data["config"]
+    vault  = config.vault.path
+
+    # ── Pending move ──────────────────────────────────────────────────────────
+    pending_move = context.user_data.pop("pending_move_path", None)
+    if pending_move:
+        dest_folder = text.strip().strip("/")
+        from vault_writer.vault.writer import create_moc_if_missing, update_moc
+        from vault_writer.vault.indexer import update_index
+        from pathlib import Path
+
+        src = Path(vault) / pending_move
+        if not src.exists():
+            await update.message.reply_text(f"❌ File not found: `{pending_move}`", parse_mode="Markdown")
+            return True
+
+        dest_dir = Path(vault) / dest_folder / "_data"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / src.name
+        src.rename(dest)
+        new_rel = f"{dest_folder}/_data/{src.name}"
+
+        index = context.bot_data["index"]
+        old_note = index.notes.pop(pending_move, None)
+        if old_note:
+            old_note.file_path = new_rel
+            old_note.folder = dest_folder
+            index.notes[new_rel] = old_note
+
+        vector_store = context.bot_data.get("vector_store")
+        if vector_store:
+            try:
+                content = dest.read_text(encoding="utf-8")
+                vector_store.delete_note(pending_move)
+                vector_store.upsert_note(new_rel, content)
+            except Exception:
+                pass
+
+        await update.message.reply_text(f"✅ Moved → `{new_rel}`", parse_mode="Markdown")
+        return True
+
+    # ── Pending tag addition ──────────────────────────────────────────────────
+    pending_tags = context.user_data.pop("pending_tags_path", None)
+    if pending_tags:
+        new_tags = [t.strip().lstrip("#") for t in text.split() if t.strip()]
+        if not new_tags:
+            await update.message.reply_text("No tags provided.")
+            return True
+
+        from pathlib import Path
+        import re
+        full = Path(vault) / pending_tags
+        if not full.exists():
+            await update.message.reply_text(f"❌ File not found: `{pending_tags}`", parse_mode="Markdown")
+            return True
+
+        content = full.read_text(encoding="utf-8")
+        if content.startswith("---"):
+            end = content.find("---", 3)
+            if end != -1:
+                fm = content[3:end]
+                tags_match = re.search(r'^tags:\n((?:  - .+\n)*)', fm, re.MULTILINE)
+                if tags_match:
+                    existing_block = tags_match.group(0)
+                    addition = "".join(f"  - {t}\n" for t in new_tags)
+                    new_fm = fm.replace(existing_block, existing_block.rstrip("\n") + "\n" + addition)
+                    full.write_text(f"---{new_fm}---{content[end+3:]}", encoding="utf-8")
+
+        await update.message.reply_text(
+            f"🏷️ Tags added: {', '.join('#'+t for t in new_tags)}", parse_mode="Markdown"
+        )
+        return True
+
+    return False
 
 
 def _git_commit(file_path: str, config) -> None:
