@@ -69,12 +69,29 @@ def _print_banner() -> None:
 # ── Bot subprocess management ─────────────────────────────────────────────────
 
 def _start_bot() -> subprocess.Popen:
-    """Launch bot_runner.py in a new console window."""
-    cmd = ["uv", "run", "python", "bot_runner.py"]
-    flags = 0
+    """Launch bot_runner.py in a new console window that stays open on exit/error."""
     if sys.platform == "win32":
-        flags = subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP
-    return subprocess.Popen(cmd, creationflags=flags)
+        # Wrap in cmd /c so the window always waits for a keypress before closing.
+        # errorlevel check gives a visible banner when the bot crashes.
+        bot_cmd = "uv run python bot_runner.py"
+        wrapper = (
+            f"{bot_cmd} & "
+            f"echo. & "
+            f"if errorlevel 1 ("
+            f"echo ══════════════════════════════════════ & "
+            f"echo  BrainSync crashed — scroll up to read the error. & "
+            f"echo ══════════════════════════════════════"
+            f") else ("
+            f"echo  BrainSync stopped normally."
+            f") & "
+            f"echo. & echo  Press any key to close this window... & pause >nul"
+        )
+        return subprocess.Popen(
+            ["cmd", "/c", wrapper],
+            creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
+    # macOS / Linux — plain launch, terminal stays open via shell
+    return subprocess.Popen(["uv", "run", "python", "bot_runner.py"])
 
 
 def _stop_bot(proc: subprocess.Popen) -> None:
