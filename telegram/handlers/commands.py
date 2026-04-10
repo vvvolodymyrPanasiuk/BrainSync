@@ -779,31 +779,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config = context.bot_data["config"]
     if not auth_check(update, config):
         return
-    help_text = (
-        "📋 BrainSync команди:\n\n"
-        "*Нотатки*\n"
-        "/note /task /idea /journal <текст>\n"
-        "/clip <url> — зберегти веб-сторінку\n"
-        "YouTube URL — аналіз відео через NotebookLM\n\n"
-        "*Vault*\n"
-        "/search <запит> — семантичний пошук\n"
-        "/today — нотатки та задачі за сьогодні\n"
-        "/stats — статистика та графіки\n"
-        "/graph — граф знань (PNG)\n"
-        "/gaps <тема> — аналіз прогалин знань\n"
-        "/health — перевірка vault\n"
-        "/move <тема> -> <папка>\n"
-        "/merge — злити нотатку з дублікатом\n\n"
-        "*Групи*\n"
-        "/registertopic <Папка> — прив'язати топік до vault-папки\n\n"
-        "*Система*\n"
-        "/settings — налаштування бота\n"
-        "/status — статус бота\n"
-        "/reload — перезавантажити config.yaml\n"
-        "/reindex — переіндексувати vault\n"
-        "/help — ця довідка"
-    )
-    await update.message.reply_text(help_text)
+    from telegram.i18n import t
+    from telegram.constants import ParseMode
+    await update.message.reply_text(t("help_text"), parse_mode=ParseMode.MARKDOWN)
 
 
 

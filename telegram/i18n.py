@@ -54,6 +54,34 @@ STRINGS: dict[str, dict[str, str]] = {
         "graph_empty":        "ℹ️ No wikilinks found in vault yet.",
         "clip_summarising":   "🤖 Summarising with AI…",
         "progress_thinking":  "⏳ Thinking…",
+        "help_text": (
+            "📋 *BrainSync commands*\n\n"
+            "*Notes*\n"
+            "`/note <text>` — save a note\n"
+            "`/task <text>` — save a task\n"
+            "`/idea <text>` — save an idea\n"
+            "`/journal <text>` — save a journal entry\n"
+            "`/clip <url>` — fetch & summarise a web page\n"
+            "YouTube URL — interactive Q&A via NotebookLM\n\n"
+            "*Vault*\n"
+            "`/search <query>` — semantic vault search\n"
+            "`/today` — today's notes + all open tasks\n"
+            "`/stats` — vault statistics with charts\n"
+            "`/graph` — knowledge graph PNG\n"
+            "`/gaps <topic>` — find missing subtopics in your vault\n"
+            "`/health` — vault health check (orphans, broken links)\n"
+            "`/move <topic> -> <folder>` — move a note\n"
+            "`/merge` — merge note with detected duplicate\n\n"
+            "*Groups*\n"
+            "`/registertopic <Folder>` — map Telegram thread to vault folder\n\n"
+            "*System*\n"
+            "`/settings` — toggle auto-commit, wikilinks, MoC, daily summary\n"
+            "`/status` — bot status, session stats, AI provider info\n"
+            "`/reload` — hot-reload config.yaml without restart\n"
+            "`/reindex` — rebuild vector search index\n"
+            "`/help` — this message\n\n"
+            "_You can also just send a plain message — AI will classify and save it automatically._"
+        ),
     },
     "uk": {
         "bot_online":         "🟢 BrainSync online — готовий до роботи.",
@@ -105,6 +133,34 @@ STRINGS: dict[str, dict[str, str]] = {
         "graph_empty":        "ℹ️ Поки що немає вікіпосилань у vault.",
         "clip_summarising":   "🤖 Узагальнюю за допомогою AI…",
         "progress_thinking":  "⏳ Думаю…",
+        "help_text": (
+            "📋 *Команди BrainSync*\n\n"
+            "*Нотатки*\n"
+            "`/note <текст>` — зберегти нотатку\n"
+            "`/task <текст>` — зберегти завдання\n"
+            "`/idea <текст>` — зберегти ідею\n"
+            "`/journal <текст>` — зберегти запис у щоденник\n"
+            "`/clip <url>` — завантажити та узагальнити веб-сторінку\n"
+            "YouTube URL — інтерактивні Q&A через NotebookLM\n\n"
+            "*Vault*\n"
+            "`/search <запит>` — семантичний пошук по vault\n"
+            "`/today` — нотатки за сьогодні + всі відкриті завдання\n"
+            "`/stats` — статистика vault із графіками\n"
+            "`/graph` — граф знань (PNG)\n"
+            "`/gaps <тема>` — аналіз прогалин у знаннях\n"
+            "`/health` — перевірка vault (сироти, зламані посилання)\n"
+            "`/move <тема> -> <папка>` — перемістити нотатку\n"
+            "`/merge` — об'єднати нотатку з виявленим дублікатом\n\n"
+            "*Групи*\n"
+            "`/registertopic <Папка>` — прив'язати топік Telegram до папки vault\n\n"
+            "*Система*\n"
+            "`/settings` — перемкнути auto-commit, wikilinks, MoC, daily summary\n"
+            "`/status` — статус бота, статистика сесії, інфо про AI\n"
+            "`/reload` — перезавантажити config.yaml без перезапуску\n"
+            "`/reindex` — перебудувати індекс семантичного пошуку\n"
+            "`/help` — це повідомлення\n\n"
+            "_Можна також просто надіслати звичайне повідомлення — AI автоматично класифікує та збереже його._"
+        ),
     },
 }
 
