@@ -27,8 +27,10 @@ class AIConfig:
     inject_vault_index: bool
     max_context_tokens: int
     api_key: str                   # NEVER logged or committed
-    ollama_vision_model: str = ""  # vision model for Ollama (e.g. "llava")
-    ollama_timeout: int = 900      # seconds to wait for Ollama response (15 min default for slow hardware)
+    ollama_vision_model: str = ""        # vision model for Ollama (e.g. "llava")
+    ollama_timeout: int = 900            # seconds to wait for Ollama response (15 min default for slow hardware)
+    claude_code_use_ollama: bool = False # True = route Claude Code through Ollama backend
+    claude_code_timeout: int = 300       # seconds to wait for claude CLI response
 
 
 @dataclass
@@ -152,12 +154,14 @@ def load_config(config_path: str) -> AppConfig:
     errors: list[str] = []
 
     provider = ai_raw.get("provider", "")
-    if provider not in ("anthropic", "ollama"):
-        errors.append(f"ai.provider must be 'anthropic' or 'ollama', got: {provider!r}")
+    if provider not in ("anthropic", "ollama", "claude_code"):
+        errors.append(f"ai.provider must be 'anthropic', 'ollama', or 'claude_code', got: {provider!r}")
 
     api_key = ai_raw.get("api_key", "")
     if provider == "anthropic" and not api_key:
         errors.append("ai.api_key must not be empty when provider='anthropic'")
+    if provider == "claude_code" and not ai_raw.get("model", ""):
+        errors.append("ai.model must not be empty when provider='claude_code'")
 
     vault_path = vault_raw.get("path", "")
     if vault_path and not Path(vault_path).is_dir():
@@ -210,6 +214,8 @@ def load_config(config_path: str) -> AppConfig:
             api_key=api_key,
             ollama_vision_model=ai_raw.get("ollama_vision_model", ""),
             ollama_timeout=int(ai_raw.get("ollama_timeout", 900)),
+            claude_code_use_ollama=bool(ai_raw.get("claude_code_use_ollama", False)),
+            claude_code_timeout=int(ai_raw.get("claude_code_timeout", 300)),
         ),
         vault=VaultConfig(
             path=vault_path,
@@ -287,6 +293,8 @@ def get_ai_provider(config: AppConfig):
     """Return AIProvider instance based on config. Raises for unsupported providers."""
     from vault_writer.ai.anthropic_provider import AnthropicProvider
     from vault_writer.ai.ollama_provider import OllamaProvider
+    from vault_writer.ai.claude_code_provider import ClaudeCodeProvider
+    from pathlib import Path
 
     if config.ai.provider == "anthropic":
         return AnthropicProvider(api_key=config.ai.api_key, model=config.ai.model)
@@ -296,6 +304,16 @@ def get_ai_provider(config: AppConfig):
             model=config.ai.model,
             vision_model=config.ai.ollama_vision_model,
             timeout=config.ai.ollama_timeout,
+        )
+    if config.ai.provider == "claude_code":
+        # project_dir = BrainSync root (where CLAUDE.md and .brain/AGENTS.md live)
+        project_dir = str(Path(config.config_path).parent)
+        return ClaudeCodeProvider(
+            model=config.ai.model,
+            use_ollama=config.ai.claude_code_use_ollama,
+            ollama_url=config.ai.ollama_url,
+            project_dir=project_dir,
+            timeout=config.ai.claude_code_timeout,
         )
     raise ValueError(f"Unsupported AI provider: {config.ai.provider!r}")
 

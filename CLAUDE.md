@@ -18,14 +18,47 @@ Do NOT leave README describing old behaviour after code changes.
 
 ---
 
+## REQUIRED: Claude Code CLI
+
+**Claude Code CLI is a mandatory runtime dependency of BrainSync.**
+
+The bot uses `provider: claude_code` in `config.yaml`, which spawns `claude -p <prompt>`
+as a subprocess for every AI call. This gives the bot full Claude Code capabilities:
+web search, file reading, MCP tools, bash execution.
+
+Install Claude Code before running the bot:
+- Download: https://claude.ai/download
+- Verify: `claude --version`
+
+**Ollama backend** (recommended for local use):
+```bash
+# 1. Install Ollama: https://ollama.com
+ollama pull kimi-k2.5:cloud
+# 2. Set in config.yaml:
+#    provider: claude_code
+#    model: kimi-k2.5:cloud
+#    claude_code_use_ollama: true
+```
+
+**Native Anthropic** (cloud):
+```bash
+# Set ANTHROPIC_API_KEY env var, then in config.yaml:
+#    provider: claude_code
+#    model: claude-sonnet-4-6
+#    claude_code_use_ollama: false
+```
+
+---
+
 ## Active Technologies
 
 - **Python 3.12+** on Windows 11
+- **Claude Code CLI** — mandatory AI runtime (`claude` must be in PATH)
 - **python-telegram-bot v20+** (async PTB, job queue)
 - **ChromaDB** embedded (`data/chroma/`) — local, no server, gitignored
 - **sentence-transformers** + torch (CPU) for embeddings
 - **faster-whisper** for on-device voice transcription
-- **Ollama** (optional local AI) or **Anthropic Claude** (cloud AI)
+- **Ollama** (optional Ollama backend for Claude Code) or **Anthropic Claude** (cloud backend)
 - **uv** — package manager (replaces pip + venv)
 - **notebooklm-py** — optional, YouTube × NotebookLM integration
 - **matplotlib + networkx + numpy** — optional, for charts and knowledge graph

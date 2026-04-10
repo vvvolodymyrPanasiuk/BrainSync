@@ -133,10 +133,13 @@ async def _ensure_infrastructure_ready(app) -> None:
         app.bot_data["ai_ready"] = False
         return
 
-    if config.ai.provider == "ollama":
+    if config.ai.provider in ("ollama", "claude_code"):
+        backend = config.ai.ollama_url if config.ai.provider == "ollama" else (
+            f"Ollama @ {config.ai.ollama_url}" if config.ai.claude_code_use_ollama else "Anthropic"
+        )
         logger.info(
-            "AI warmup starting — provider=%s model=%s url=%s",
-            config.ai.provider, config.ai.model, config.ai.ollama_url,
+            "AI warmup starting — provider=%s model=%s backend=%s",
+            config.ai.provider, config.ai.model, backend,
         )
         await _notify(f"⏳ Loading AI model `{config.ai.model}` into memory… (cold start, please wait)")
         try:
@@ -153,6 +156,12 @@ async def _ensure_infrastructure_ready(app) -> None:
                 f"Available models: `{'`, `'.join(available)}`"
                 if available else "Run `ollama list` to see available models."
             )
+            if config.ai.provider == "claude_code":
+                hint = (
+                    "Make sure Claude Code CLI is installed: https://claude.ai/download\n"
+                    "Then verify: `claude --version`\n\n"
+                    + hint
+                )
             await _notify(
                 f"❌ BrainSync НЕ готовий — AI не завантажився.\n"
                 f"Model: `{config.ai.model}`\n"

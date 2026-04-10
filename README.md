@@ -93,18 +93,27 @@ BrainSync solves two problems: **capture** and **retrieval**.
 
 1. **Python 3.12+** — [python.org/downloads](https://python.org/downloads). Check "Add Python to PATH" during install on Windows.
 2. **Git** — [git-scm.com](https://git-scm.com)
-3. **ffmpeg** — required for voice message decoding:
+3. **Claude Code CLI** ⚠️ **mandatory** — BrainSync uses Claude Code as its AI runtime:
+   ```bash
+   # Install Claude Code (desktop app or CLI)
+   # https://claude.ai/download
+   claude --version    # verify installation
+   ```
+4. **ffmpeg** — required for voice message decoding:
    ```
    winget install ffmpeg        # Windows
    brew install ffmpeg          # macOS
    sudo apt install ffmpeg      # Ubuntu/Debian
    ```
-4. **An Obsidian vault** — an existing folder where your `.md` notes live. The Obsidian app does not need to be running.
-5. **A Telegram bot** — create via [@BotFather](https://t.me/BotFather), copy the token.
-6. **Your Telegram user ID** — get from [@userinfobot](https://t.me/userinfobot).
-7. **AI provider** — either:
-   - [Anthropic API key](https://console.anthropic.com) (cloud, requires internet)
-   - [Ollama](https://ollama.com) running locally (fully offline, free)
+5. **An Obsidian vault** — an existing folder where your `.md` notes live. The Obsidian app does not need to be running.
+6. **A Telegram bot** — create via [@BotFather](https://t.me/BotFather), copy the token.
+7. **Your Telegram user ID** — get from [@userinfobot](https://t.me/userinfobot).
+8. **AI backend** — Claude Code supports two backends:
+   - **Ollama** (recommended, local, free) — install [Ollama](https://ollama.com), then `ollama pull kimi-k2.5:cloud`
+   - **Anthropic** (cloud) — [Anthropic API key](https://console.anthropic.com), set `ANTHROPIC_API_KEY` env var
+
+> **Why Claude Code CLI?**
+> Unlike direct API calls, Claude Code gives the bot full tool access: web search, file reading, bash execution, and MCP servers — with zero custom implementation. Ask "what's the ETH price?" or "current time in Tokyo?" and the bot actually searches the web to answer.
 
 **Optional** (for charts and graph):
 ```bash
@@ -262,8 +271,8 @@ Intents and what happens:
 | `CREATE_NOTE` | Format → enrich with wikilinks → write → MoC → duplicate check |
 | `ANSWER_FROM_VAULT` | RAG: vector search → AI synthesizes answer from your notes |
 | `SEARCH_VAULT` | Semantic search → ranked results list |
-| `CHAT_ONLY` | General conversation, no vault interaction |
-| `SEARCH_WEB` | DuckDuckGo search → AI-synthesized answer |
+| `CHAT_ONLY` | General conversation; with `claude_code` provider → uses web search automatically |
+| `SEARCH_WEB` | Web search via Claude Code tools → AI-synthesized answer with sources |
 | `MOVE_NOTE` | Find note semantically → move to target folder |
 | `APPEND_NOTE` | Find closest note → append content |
 | `UPDATE_NOTE` | Find closest note → rewrite with new info |
@@ -311,11 +320,13 @@ Streak notifications fire at 3, 7, 14, 30, 100 days. Milestone notifications fir
 
 ```yaml
 ai:
-  provider: "anthropic"           # "anthropic" | "ollama"
-  model: "claude-sonnet-4-6"
+  provider: "claude_code"         # "claude_code" (recommended) | "anthropic" | "ollama"
+  model: "kimi-k2.5:cloud"        # Ollama model, or "claude-sonnet-4-6" for native Anthropic
+  claude_code_use_ollama: true    # true = Ollama backend; false = native Anthropic
+  claude_code_timeout: 300        # seconds to wait for claude CLI response
   ollama_url: "http://localhost:11434"
-  ollama_vision_model: ""         # e.g. "llava" — for photo descriptions
-  ollama_timeout: 900             # seconds (increase for slow hardware / thinking models)
+  ollama_vision_model: ""         # e.g. "llava" — for photo descriptions (Ollama only)
+  ollama_timeout: 900             # seconds (used when provider="ollama")
   agents_file: ".brain/AGENTS.md"
   skills_path: ".brain/skills/"
   inject_vault_index: true
