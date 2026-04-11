@@ -79,8 +79,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             _git_commit(result["file_path"], config)
         return
 
-    # ── Explicit search prefix: ? → vault, ?? → web (bypasses AI router) ─────
-    if text.startswith("??"):
+    # ── Explicit search prefixes (bypass AI router) ───────────────────────────
+    # Order matters: ??? before ?? before ?
+    if text.startswith("???"):
+        query = text[3:].strip()
+        if query:
+            await _handle_forced_search(query, "combined", update, context, config, index, stats, provider, vector_store)
+            return
+    elif text.startswith("??"):
         query = text[2:].strip()
         if query:
             await _handle_forced_search(query, "web", update, context, config, index, stats, provider, vector_store)
@@ -108,6 +114,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # ── AI Semantic Router ────────────────────────────────────────────────────
     try:
         plan = await _route(text, provider, index, config.vault.language)
+        # Search intents require an explicit ? prefix — redirect to chat otherwise
+        from vault_writer.ai.router import Intent as _Intent
+        _SEARCH_INTENTS = {
+            _Intent.ANSWER_FROM_VAULT, _Intent.SEARCH_VAULT,
+            _Intent.ANALYZE_VAULT, _Intent.SUMMARIZE_VAULT, _Intent.SEARCH_WEB,
+        }
+        if plan.intent in _SEARCH_INTENTS:
+            plan.intent = _Intent.CHAT_ONLY
+            plan.should_save = False
     except Exception as exc:
         logger.error("routing failed: %s", exc, exc_info=True)
         if progress_msg:
@@ -341,8 +356,12 @@ async def _handle_forced_search(
     from telegram.i18n import t
     from vault_writer.ai.router import ActionPlan, Intent
 
-    intent = Intent.ANSWER_FROM_VAULT if mode == "vault" else Intent.SEARCH_WEB
-    progress_key = "vault_search_progress" if mode == "vault" else "web_search_progress"
+    _progress_keys = {
+        "vault": "vault_search_progress",
+        "web": "web_search_progress",
+        "combined": "combined_search_progress",
+    }
+    progress_key = _progress_keys.get(mode, "progress_thinking")
 
     progress_msg = None
     try:
@@ -350,38 +369,45 @@ async def _handle_forced_search(
     except Exception:
         pass
 
-    plan = ActionPlan(
-        intent=intent,
-        confidence=1.0,
-        should_save=False,
-        needs_web=(mode == "web"),
-        needs_clarification=False,
-        note_type="note",
-        general_category="",
-        target_folder="",
-        target_subfolder="",
-        section="",
-        topic=query[:60],
-        tags=[],
-        summary="",
-        actions=[],
-        sources=[],
-        reason="explicit prefix",
-        title="",
-    )
+    # "combined" mode: vault + web in one AI call — bypass ActionPlan/execute pipeline
+    if mode == "combined":
+        from vault_writer.tools.executor import _combined_vault_and_web
+        reply = await _combined_vault_and_web(query, vector_store, provider, config)
+        keyboard = None
+    else:
+        intent = Intent.ANSWER_FROM_VAULT if mode == "vault" else Intent.SEARCH_WEB
+        plan = ActionPlan(
+            intent=intent,
+            confidence=1.0,
+            should_save=False,
+            needs_web=(mode == "web"),
+            needs_clarification=False,
+            note_type="note",
+            general_category="",
+            target_folder="",
+            target_subfolder="",
+            section="",
+            topic=query[:60],
+            tags=[],
+            summary="",
+            actions=[],
+            sources=[],
+            reason="explicit prefix",
+            title="",
+        )
 
-    from vault_writer.tools.executor import execute
-    reply, keyboard = await execute(
-        plan=plan,
-        message=query,
-        update=update,
-        context=context,
-        config=config,
-        index=index,
-        stats=stats,
-        provider=provider,
-        vector_store=vector_store,
-    )
+        from vault_writer.tools.executor import execute
+        reply, keyboard = await execute(
+            plan=plan,
+            message=query,
+            update=update,
+            context=context,
+            config=config,
+            index=index,
+            stats=stats,
+            provider=provider,
+            vector_store=vector_store,
+        )
 
     if progress_msg:
         try:

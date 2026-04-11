@@ -77,10 +77,10 @@ async def _execute_inner(
         return await _search_vault(message, vector_store, config)
 
     if intent == Intent.CHAT_ONLY:
-        return await _chat(message, provider, config)
+        return await _chat(message, provider, config, vector_store)
 
     if intent == Intent.SEARCH_WEB:
-        return await _search_web(message, provider)
+        return await _search_web(message, provider, config)
 
     if intent == Intent.REQUEST_CLARIFICATION:
         return await _clarify(message, plan, provider, context)
@@ -172,110 +172,151 @@ async def _search_vault(message: str, vector_store, config) -> str:
     return prefix + format_semantic_search_results(results, message)
 
 
-async def _chat(message: str, provider, config=None) -> str:
-    from telegram.formatter import format_chat_reply
+async def _chat(message: str, provider, config=None, vector_store=None) -> str:
+    """Chat response: vault check (priority, labeled) + AI general answer (labeled)."""
     from telegram.i18n import t
     if provider is None:
         return t("ai_unavailable")
-    prompt = f"Respond in the same language as the user's message.\n\nUser: {message}"
+
+    # Search vault for relevant context
+    vault_snippets = await _vault_snippets(message, vector_store, config)
+
+    if vault_snippets:
+        vault_context = "\n\n".join(vault_snippets)
+        prompt = (
+            f"The user sent a message. Their personal knowledge vault contains these relevant notes:\n\n"
+            f"{vault_context}\n\n"
+            f"User message: {message}\n\n"
+            f"Respond in the SAME LANGUAGE as the user's message in exactly TWO labeled sections:\n"
+            f"Section 1 — start with exactly '📚 *Із vault:*' then synthesize what the vault notes say about this.\n"
+            f"Section 2 — start with exactly '🤖 *Відповідь ШІ:*' then give your own answer or insight.\n"
+            f"Keep each section concise and useful."
+        )
+    else:
+        prompt = (
+            f"The user sent a message. Their personal knowledge vault has NO relevant notes on this topic.\n\n"
+            f"User message: {message}\n\n"
+            f"Respond in the SAME LANGUAGE as the user's message in exactly TWO labeled sections:\n"
+            f"Section 1 — start with exactly '📚 *Із vault:*' then write: nothing found in vault.\n"
+            f"Section 2 — start with exactly '🤖 *Відповідь ШІ:*' then give your own comprehensive answer.\n"
+            f"Keep each section concise and useful."
+        )
+
     loop = asyncio.get_running_loop()
     import time as _time
-    logger.info("executor: _chat → sending to AI…")
+    logger.info("executor: _chat → sending to AI (vault_hits=%d)…", len(vault_snippets))
     _t0 = _time.monotonic()
     try:
         answer = await loop.run_in_executor(None, provider.complete, prompt)
         logger.info("executor: _chat ← AI replied in %.1fs", _time.monotonic() - _t0)
-        reply = format_chat_reply(answer)
-        # When claude_code provider is used, it may autonomously search the web.
-        # Append a small disclosure so the user knows the answer might use web sources.
-        if config is not None and getattr(config.ai, "provider", "") == "claude_code":
-            reply += "\n\n" + t("chat_web_disclaimer")
-        return reply
+        return answer.strip()
     except Exception as exc:
         logger.warning("executor: _chat AI call failed after %.1fs: %s", _time.monotonic() - _t0, exc)
         return t("ai_unavailable")
 
 
-async def _search_web(message: str, provider) -> str:
-    """Search via DuckDuckGo API (no key required), synthesise with AI."""
+async def _search_web(message: str, provider, config=None) -> str:
+    """Ask the AI to search the web for current data and synthesise an answer."""
+    from telegram.i18n import t
+    if provider is None:
+        return t("ai_unavailable")
+
+    prompt = (
+        f"Search the web for up-to-date information about the following query. "
+        f"Provide a comprehensive answer with real facts and include sources/links where possible.\n\n"
+        f"Query: {message}\n\n"
+        f"Respond in the SAME LANGUAGE as the query. "
+        f"Start your response with '🌐 *Результат пошуку:*' for Ukrainian queries "
+        f"or '🌐 *Web search result:*' for English queries. "
+        f"If you cannot search the web, answer from your knowledge and note the limitation."
+    )
+
+    loop = asyncio.get_running_loop()
+    import time as _time
+    logger.info("executor: _search_web → sending to AI…")
+    _t0 = _time.monotonic()
+    try:
+        answer = await loop.run_in_executor(None, provider.complete, prompt)
+        logger.info("executor: _search_web ← AI replied in %.1fs", _time.monotonic() - _t0)
+        answer = answer.strip()
+        if not answer.startswith("🌐"):
+            answer = "🌐 *Web search result:*\n\n" + answer
+        return answer
+    except Exception as exc:
+        logger.warning("executor: _search_web failed after %.1fs: %s", _time.monotonic() - _t0, exc)
+        return t("ai_unavailable")
+
+
+async def _vault_snippets(message: str, vector_store, config) -> list[str]:
+    """Return a list of vault excerpt strings for use in AI prompts. Empty list if nothing found."""
+    if vector_store is None:
+        return []
+    is_ready = getattr(vector_store, "is_ready", None)
+    if is_ready is not None and not is_ready():
+        return []
+    top_k = getattr(getattr(config, "embedding", None), "top_k_results", 5) if config else 5
     try:
         loop = asyncio.get_running_loop()
-        snippets = await loop.run_in_executor(None, _ddg_search, message)
-    except Exception as exc:
-        logger.warning("web search failed: %s", exc)
+        fn = getattr(vector_store, "hybrid_search", vector_store.search)
+        results = await loop.run_in_executor(None, fn, message, top_k)
         snippets = []
+        for r in results:
+            path = getattr(r, "file_path", None)
+            excerpt = getattr(r, "excerpt", "") or ""
+            if path and excerpt.strip():
+                snippets.append(f"[{path}]\n{excerpt[:500]}")
+        return snippets
+    except Exception as exc:
+        logger.warning("executor: vault snippet search failed: %s", exc)
+        return []
 
-    if not snippets:
-        if provider is not None:
-            prompt = (
-                f"Answer the following question from your own knowledge. "
-                f"Note that web search was attempted but returned no results.\n\n{message}"
-            )
-            loop = asyncio.get_running_loop()
-            answer = await loop.run_in_executor(None, provider.complete, prompt)
-            return f"🌐 (web search unavailable)\n\n{answer}"
-        return "🌐 Web search unavailable and no AI provider configured."
 
-    context_text = "\n\n".join(
-        f"[{i+1}] {s['title']}\n{s['snippet']}\nSource: {s['url']}"
-        for i, s in enumerate(snippets[:5])
-    )
+async def _combined_vault_and_web(
+    message: str, vector_store, provider, config
+) -> str:
+    """Search vault + ask AI to search web; return two labeled sections in one call."""
+    from telegram.i18n import t
+    if provider is None:
+        return t("ai_unavailable")
 
-    if provider is not None:
+    vault_snippets = await _vault_snippets(message, vector_store, config)
+
+    if vault_snippets:
+        vault_context = "\n\n".join(vault_snippets)
         prompt = (
-            f"Answer the user's question based on the following web search results. "
-            f"Cite sources with [N]. Mark every fact from web as (source: web).\n\n"
-            f"Question: {message}\n\nSearch results:\n{context_text}\n\n"
-            f"Answer in the same language as the question."
+            f"The user has a query. Their personal knowledge vault contains these relevant notes:\n\n"
+            f"{vault_context}\n\n"
+            f"Query: {message}\n\n"
+            f"Please:\n"
+            f"1. Search the web for current, up-to-date information on this topic\n"
+            f"2. Respond in the SAME LANGUAGE as the query in exactly TWO labeled sections:\n"
+            f"   Section 1 — start with exactly '📚 *Із vault:*' then synthesize what the vault notes say\n"
+            f"   Section 2 — start with exactly '🌐 *З інтернету:*' then summarize what you found on the web, with sources\n"
+            f"Keep each section focused and useful."
         )
-        loop = asyncio.get_running_loop()
+    else:
+        prompt = (
+            f"The user has a query. Their personal knowledge vault has NO relevant notes on this topic.\n\n"
+            f"Query: {message}\n\n"
+            f"Please:\n"
+            f"1. Search the web for current, up-to-date information on this topic\n"
+            f"2. Respond in the SAME LANGUAGE as the query in exactly TWO labeled sections:\n"
+            f"   Section 1 — start with exactly '📚 *Із vault:*' then write: nothing found in vault\n"
+            f"   Section 2 — start with exactly '🌐 *З інтернету:*' then summarize what you found on the web, with sources\n"
+            f"Keep each section focused and useful."
+        )
+
+    loop = asyncio.get_running_loop()
+    import time as _time
+    logger.info("executor: _combined_vault_and_web → sending to AI (vault_hits=%d)…", len(vault_snippets))
+    _t0 = _time.monotonic()
+    try:
         answer = await loop.run_in_executor(None, provider.complete, prompt)
-        return f"🌐 *Web search result:*\n\n{answer}"
-
-    # No AI — return raw snippets
-    lines = ["🌐 *Web search results:*\n"]
-    for i, s in enumerate(snippets[:5], 1):
-        lines.append(f"*{i}. {s['title']}*\n{s['snippet']}\n_{s['url']}_\n")
-    return "\n".join(lines)
-
-
-def _ddg_search(query: str, max_results: int = 5) -> list[dict]:
-    """DuckDuckGo Instant Answer API — no API key required."""
-    import json
-    import urllib.parse
-    import urllib.request
-
-    url = (
-        "https://api.duckduckgo.com/?q="
-        + urllib.parse.quote_plus(query)
-        + "&format=json&no_html=1&skip_disambig=1"
-    )
-    req = urllib.request.Request(url, headers={"User-Agent": "BrainSync/1.0"})
-    with urllib.request.urlopen(req, timeout=8) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-
-    results: list[dict] = []
-
-    # Abstract (featured snippet)
-    if data.get("AbstractText"):
-        results.append({
-            "title": data.get("Heading", "DuckDuckGo"),
-            "snippet": data["AbstractText"],
-            "url": data.get("AbstractURL", "https://duckduckgo.com"),
-        })
-
-    # Related topics
-    for item in data.get("RelatedTopics", []):
-        if len(results) >= max_results:
-            break
-        if "Text" in item and "FirstURL" in item:
-            results.append({
-                "title": item.get("Text", "")[:80],
-                "snippet": item.get("Text", ""),
-                "url": item["FirstURL"],
-            })
-
-    return results
+        logger.info("executor: _combined_vault_and_web ← AI replied in %.1fs", _time.monotonic() - _t0)
+        return answer.strip()
+    except Exception as exc:
+        logger.warning("executor: _combined_vault_and_web failed after %.1fs: %s", _time.monotonic() - _t0, exc)
+        return t("ai_unavailable")
 
 
 async def _clarify(message: str, plan: ActionPlan, provider, context) -> str:

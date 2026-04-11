@@ -58,15 +58,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "graph_empty":        "ℹ️ No wikilinks found in vault yet.",
         "clip_summarising":   "🤖 Summarising with AI…",
         "progress_thinking":      "⏳ Thinking…",
-        "vault_search_progress":  "🔍 Searching your vault…",
-        "web_search_progress":    "🌐 Searching the web…",
+        "vault_search_progress":    "🔍 Searching your vault…",
+        "web_search_progress":     "🌐 Searching the web…",
+        "combined_search_progress": "🔍🌐 Searching vault and web…",
         "chat_web_disclaimer":    "_ℹ️ General answer — Claude Code may have used web search. Use `?` to search only your vault._",
         "help_text": (
             "📋 *BrainSync commands*\n\n"
-            "Just send a message — AI will classify and save it automatically.\n\n"
-            "*Search shortcuts (no AI routing):*\n"
+            "Just send a message — AI will classify and save it automatically.\n"
+            "Plain questions: vault checked first (📚), then AI answer (🤖).\n\n"
+            "*Search shortcuts:*\n"
             "`? <query>` — search *only your vault* (hybrid BM25+vector)\n"
-            "`?? <query>` — search *the web* and get a synthesized answer\n\n"
+            "`?? <query>` — AI *web search* for current data\n"
+            "`??? <query>` — vault *and* web, both labeled sections\n\n"
             "*Note type prefixes:*\n"
             "`note:` `task:` `idea:` `journal:` — force a note type\n\n"
             "*Commands:*\n"
@@ -134,15 +137,18 @@ STRINGS: dict[str, dict[str, str]] = {
         "graph_empty":        "ℹ️ Поки що немає вікіпосилань у vault.",
         "clip_summarising":   "🤖 Узагальнюю за допомогою AI…",
         "progress_thinking":      "⏳ Думаю…",
-        "vault_search_progress":  "🔍 Шукаю у vault…",
-        "web_search_progress":    "🌐 Шукаю в інтернеті…",
+        "vault_search_progress":    "🔍 Шукаю у vault…",
+        "web_search_progress":     "🌐 Шукаю в інтернеті…",
+        "combined_search_progress": "🔍🌐 Шукаю у vault та в інтернеті…",
         "chat_web_disclaimer":    "_ℹ️ Загальна відповідь — Claude Code міг використати пошук в інтернеті. Щоб шукати лише у vault, використай `?`._",
         "help_text": (
             "📋 *Команди BrainSync*\n\n"
-            "Просто надішли повідомлення — AI автоматично класифікує та збереже його.\n\n"
-            "*Шорткати пошуку (без AI-роутера):*\n"
+            "Просто надішли повідомлення — AI автоматично класифікує та збереже його.\n"
+            "Звичайні запитання: спочатку перевіряється vault (📚), потім відповідь ШІ (🤖).\n\n"
+            "*Шорткати пошуку:*\n"
             "`? <запит>` — шукати *тільки у vault* (гібридний BM25+vector)\n"
-            "`?? <запит>` — шукати *в інтернеті* та отримати узагальнену відповідь\n\n"
+            "`?? <запит>` — ШІ *шукає в інтернеті* актуальні дані\n"
+            "`??? <запит>` — vault *і* інтернет, обидві секції із позначками\n\n"
             "*Префікси типу нотатки:*\n"
             "`нотатка:` `задача:` `ідея:` `день:` — задати тип без AI-роутера\n\n"
             "*Команди:*\n"

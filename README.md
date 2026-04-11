@@ -277,14 +277,16 @@ help - Command reference
 
 ## Inline prefixes
 
-### Search shortcuts — no AI routing, instant
+### Search shortcuts
 
 | Prefix | Action |
 |--------|--------|
-| `? <query>` | Search **only your vault** — hybrid BM25+vector, no router call |
-| `?? <query>` | Search **the web** — DuckDuckGo + AI synthesis, no router call |
+| *(none)* | Plain question: vault checked first (📚 labeled), then AI general answer (🤖 labeled) |
+| `? <query>` | Search **only your vault** — hybrid BM25+vector, AI-synthesized answer |
+| `?? <query>` | AI **web search** for current data (e.g. live prices, recent news) |
+| `??? <query>` | Both — vault (📚) **and** web (🌐) in one AI-synthesized response |
 
-Use these when you know what you want and don't need the router to guess the intent.
+All modes go through a single AI call for a coherent, labeled response.
 
 ### Note type prefixes
 
@@ -674,9 +676,11 @@ Plain text received
        │
        ├─ Has prefix (задача:/note:/...)? → forced NoteType → save (no AI router)
        │
-       ├─ Starts with `?`?  → forced vault search (BM25+vector, no AI router)
+       ├─ Starts with `???`? → _combined_vault_and_web() → 📚 vault + 🌐 web (1 AI call)
        │
-       ├─ Starts with `??`? → forced web search (DuckDuckGo, no AI router)
+       ├─ Starts with `??`?  → _search_web() → AI web search → 🌐 result
+       │
+       ├─ Starts with `?`?   → ANSWER_FROM_VAULT → hybrid BM25+vector → AI answer
        │
        └─ AI required?
               │
@@ -685,17 +689,18 @@ Plain text received
               │
               ▼
          _route() → ActionPlan (1 AI call)
-              │
+              │       [search intents redirected → CHAT_ONLY]
               ▼
          execute(plan) → dispatcher
               │
     ┌─────────┼──────────────────────────────────┐
     │         │                                  │
-CREATE_NOTE  ANSWER_FROM_VAULT           SEARCH_VAULT / CHAT / WEB …
+CREATE_NOTE  CHAT_ONLY                     APPEND / UPDATE / MOVE …
     │         │
-format+write  vector search
-+duplicate    +AI answer
-check         +citations
+format+write  vault search (hybrid)
++duplicate    +AI answer in 2 sections:
+check          📚 Із vault: …
+               🤖 Відповідь ШІ: …
     │
 [📁 Move][🏷️ Tags] inline buttons
 (or [🔀 Merge] if duplicate ≥ 85%)
