@@ -57,10 +57,19 @@ STRINGS: dict[str, dict[str, str]] = {
         "graph_no_lib":       "❌ Install `networkx` and `matplotlib`:\n```\npip install networkx matplotlib\n```",
         "graph_empty":        "ℹ️ No wikilinks found in vault yet.",
         "clip_summarising":   "🤖 Summarising with AI…",
-        "progress_thinking":  "⏳ Thinking…",
+        "progress_thinking":      "⏳ Thinking…",
+        "vault_search_progress":  "🔍 Searching your vault…",
+        "web_search_progress":    "🌐 Searching the web…",
+        "chat_web_disclaimer":    "_ℹ️ General answer — Claude Code may have used web search. Use `?` to search only your vault._",
         "help_text": (
             "📋 *BrainSync commands*\n\n"
-            "Just send a message — AI will classify and save it automatically.\n"
+            "Just send a message — AI will classify and save it automatically.\n\n"
+            "*Search shortcuts (no AI routing):*\n"
+            "`? <query>` — search *only your vault* (hybrid BM25+vector)\n"
+            "`?? <query>` — search *the web* and get a synthesized answer\n\n"
+            "*Note type prefixes:*\n"
+            "`note:` `task:` `idea:` `journal:` — force a note type\n\n"
+            "*Commands:*\n"
             "`/clip <url>` — fetch & summarise a web page\n"
             "`/today` — today's notes + open tasks\n"
             "`/stats` — vault statistics with charts\n"
@@ -124,10 +133,19 @@ STRINGS: dict[str, dict[str, str]] = {
         "graph_no_lib":       "❌ Встановіть `networkx` та `matplotlib`:\n```\npip install networkx matplotlib\n```",
         "graph_empty":        "ℹ️ Поки що немає вікіпосилань у vault.",
         "clip_summarising":   "🤖 Узагальнюю за допомогою AI…",
-        "progress_thinking":  "⏳ Думаю…",
+        "progress_thinking":      "⏳ Думаю…",
+        "vault_search_progress":  "🔍 Шукаю у vault…",
+        "web_search_progress":    "🌐 Шукаю в інтернеті…",
+        "chat_web_disclaimer":    "_ℹ️ Загальна відповідь — Claude Code міг використати пошук в інтернеті. Щоб шукати лише у vault, використай `?`._",
         "help_text": (
             "📋 *Команди BrainSync*\n\n"
-            "Просто надішли повідомлення — AI автоматично класифікує та збереже його.\n"
+            "Просто надішли повідомлення — AI автоматично класифікує та збереже його.\n\n"
+            "*Шорткати пошуку (без AI-роутера):*\n"
+            "`? <запит>` — шукати *тільки у vault* (гібридний BM25+vector)\n"
+            "`?? <запит>` — шукати *в інтернеті* та отримати узагальнену відповідь\n\n"
+            "*Префікси типу нотатки:*\n"
+            "`нотатка:` `задача:` `ідея:` `день:` — задати тип без AI-роутера\n\n"
+            "*Команди:*\n"
             "`/clip <url>` — завантажити та узагальнити веб-сторінку\n"
             "`/today` — нотатки за сьогодні + відкриті завдання\n"
             "`/stats` — статистика vault із графіками\n"

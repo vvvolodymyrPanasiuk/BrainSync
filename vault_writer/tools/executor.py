@@ -77,7 +77,7 @@ async def _execute_inner(
         return await _search_vault(message, vector_store, config)
 
     if intent == Intent.CHAT_ONLY:
-        return await _chat(message, provider)
+        return await _chat(message, provider, config)
 
     if intent == Intent.SEARCH_WEB:
         return await _search_web(message, provider)
@@ -172,7 +172,7 @@ async def _search_vault(message: str, vector_store, config) -> str:
     return prefix + format_semantic_search_results(results, message)
 
 
-async def _chat(message: str, provider) -> str:
+async def _chat(message: str, provider, config=None) -> str:
     from telegram.formatter import format_chat_reply
     from telegram.i18n import t
     if provider is None:
@@ -185,7 +185,12 @@ async def _chat(message: str, provider) -> str:
     try:
         answer = await loop.run_in_executor(None, provider.complete, prompt)
         logger.info("executor: _chat ← AI replied in %.1fs", _time.monotonic() - _t0)
-        return format_chat_reply(answer)
+        reply = format_chat_reply(answer)
+        # When claude_code provider is used, it may autonomously search the web.
+        # Append a small disclosure so the user knows the answer might use web sources.
+        if config is not None and getattr(config.ai, "provider", "") == "claude_code":
+            reply += "\n\n" + t("chat_web_disclaimer")
+        return reply
     except Exception as exc:
         logger.warning("executor: _chat AI call failed after %.1fs: %s", _time.monotonic() - _t0, exc)
         return t("ai_unavailable")

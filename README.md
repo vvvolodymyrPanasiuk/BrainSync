@@ -277,7 +277,18 @@ help - Command reference
 
 ## Inline prefixes
 
-Add a prefix at the start of any message (or media caption) to force a note type:
+### Search shortcuts — no AI routing, instant
+
+| Prefix | Action |
+|--------|--------|
+| `? <query>` | Search **only your vault** — hybrid BM25+vector, no router call |
+| `?? <query>` | Search **the web** — DuckDuckGo + AI synthesis, no router call |
+
+Use these when you know what you want and don't need the router to guess the intent.
+
+### Note type prefixes
+
+Add a prefix at the start of any message (or media caption) to force a note type without AI classification:
 
 ```
 note: ...       нотатка: ...
@@ -340,10 +351,10 @@ Intents and what happens:
 | Intent | Behaviour |
 |--------|-----------|
 | `CREATE_NOTE` | Format → enrich with wikilinks → write → MoC → duplicate check |
-| `ANSWER_FROM_VAULT` | RAG: vector search → AI synthesizes answer from your notes |
-| `SEARCH_VAULT` | Semantic search → ranked results list |
-| `CHAT_ONLY` | General conversation; with `claude_code` provider → uses web search automatically |
-| `SEARCH_WEB` | Web search via Claude Code tools → AI-synthesized answer with sources |
+| `ANSWER_FROM_VAULT` | RAG: hybrid BM25+vector search → AI synthesizes answer from your notes |
+| `SEARCH_VAULT` | Hybrid search → ranked results list with excerpts |
+| `CHAT_ONLY` | General conversation; with `claude_code` provider → may use web search autonomously _(disclaimer shown)_ |
+| `SEARCH_WEB` | DuckDuckGo search → AI-synthesized answer with citations |
 | `MOVE_NOTE` | Find note semantically → move to target folder |
 | `APPEND_NOTE` | Find closest note → append content |
 | `UPDATE_NOTE` | Find closest note → rewrite with new info |
@@ -662,6 +673,10 @@ Plain text received
        ├─ Group topic thread? → inject [Topic: Name] context prefix
        │
        ├─ Has prefix (задача:/note:/...)? → forced NoteType → save (no AI router)
+       │
+       ├─ Starts with `?`?  → forced vault search (BM25+vector, no AI router)
+       │
+       ├─ Starts with `??`? → forced web search (DuckDuckGo, no AI router)
        │
        └─ AI required?
               │

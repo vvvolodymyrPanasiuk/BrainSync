@@ -79,6 +79,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             _git_commit(result["file_path"], config)
         return
 
+    # ── Explicit search prefix: ? → vault, ?? → web (bypasses AI router) ─────
+    if text.startswith("??"):
+        query = text[2:].strip()
+        if query:
+            await _handle_forced_search(query, "web", update, context, config, index, stats, provider, vector_store)
+            return
+    elif text.startswith("?"):
+        query = text[1:].strip()
+        if query:
+            await _handle_forced_search(query, "vault", update, context, config, index, stats, provider, vector_store)
+            return
+
     # ── AI required ───────────────────────────────────────────────────────────
     if not context.bot_data.get("ai_ready", False):
         from telegram.i18n import t
@@ -312,6 +324,73 @@ async def _handle_pending_inline(update, context, text: str) -> bool:
         return True
 
     return False
+
+
+async def _handle_forced_search(
+    query: str,
+    mode: str,          # "vault" | "web"
+    update,
+    context,
+    config,
+    index,
+    stats,
+    provider,
+    vector_store,
+) -> None:
+    """Execute a forced vault or web search without going through the AI router."""
+    from telegram.i18n import t
+    from vault_writer.ai.router import ActionPlan, Intent
+
+    intent = Intent.ANSWER_FROM_VAULT if mode == "vault" else Intent.SEARCH_WEB
+    progress_key = "vault_search_progress" if mode == "vault" else "web_search_progress"
+
+    progress_msg = None
+    try:
+        progress_msg = await update.message.reply_text(t(progress_key))
+    except Exception:
+        pass
+
+    plan = ActionPlan(
+        intent=intent,
+        confidence=1.0,
+        should_save=False,
+        needs_web=(mode == "web"),
+        needs_clarification=False,
+        note_type="note",
+        general_category="",
+        target_folder="",
+        target_subfolder="",
+        section="",
+        topic=query[:60],
+        tags=[],
+        summary="",
+        actions=[],
+        sources=[],
+        reason="explicit prefix",
+        title="",
+    )
+
+    from vault_writer.tools.executor import execute
+    reply, keyboard = await execute(
+        plan=plan,
+        message=query,
+        update=update,
+        context=context,
+        config=config,
+        index=index,
+        stats=stats,
+        provider=provider,
+        vector_store=vector_store,
+    )
+
+    if progress_msg:
+        try:
+            await progress_msg.delete()
+        except Exception:
+            pass
+
+    if reply:
+        await _reply_with_retry(update, reply, keyboard=keyboard)
 
 
 def _git_commit(file_path: str, config) -> None:
