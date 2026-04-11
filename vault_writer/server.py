@@ -114,6 +114,31 @@ async def list_tools() -> list[Tool]:
                 "required": ["moc_path", "note_path", "note_title", "note_number"],
             },
         ),
+        Tool(
+            name="save_conversation",
+            description=(
+                "Extract key information from a conversation and save it as a structured vault note. "
+                "Useful at the end of a Claude Code session to capture decisions, learnings, and action items."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "conversation": {
+                        "type": "string",
+                        "description": "Full conversation text to extract key information from",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Optional note title override",
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Optional vault-relative target folder (e.g. 'Development/Sessions')",
+                    },
+                },
+                "required": ["conversation"],
+            },
+        ),
     ]
 
 
@@ -169,6 +194,28 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             config.vault.path,
         )
         return [TextContent(type="text", text=json.dumps({"success": True}))]
+
+    if name == "save_conversation":
+        from vault_writer.tools.create_note import handle_create_note
+        stats = SessionStats()
+        title_hint = arguments.get("title", "")
+        text = (
+            f"[Conversation Note]\n"
+            + (f"Title: {title_hint}\n" if title_hint else "")
+            + "Extract and structure the key information from this conversation — "
+            "decisions made, concepts learned, action items, and important context:\n\n"
+            + arguments["conversation"]
+        )
+        result = handle_create_note(
+            text=text,
+            type_=None,
+            folder=arguments.get("folder"),
+            config=config,
+            index=index,
+            stats=stats,
+            provider=provider,
+        )
+        return [TextContent(type="text", text=json.dumps(result))]
 
     return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
 

@@ -61,7 +61,7 @@ ollama pull kimi-k2.5:cloud
 - **Ollama** (optional Ollama backend for Claude Code) or **Anthropic Claude** (cloud backend)
 - **uv** — package manager (replaces pip + venv)
 - **notebooklm-py** — optional, YouTube × NotebookLM integration
-- **matplotlib + networkx + numpy** — optional, for charts and knowledge graph
+- **matplotlib + numpy** — optional, for charts in `/stats` and scheduled summaries
 
 ---
 
@@ -76,7 +76,6 @@ BrainSync/
 │   ├── ai/router.py         # AI Semantic Router → ActionPlan
 │   ├── ai/classifier.py     # Legacy classification path
 │   ├── tools/executor.py    # ActionPlan dispatcher
-│   ├── tools/gamification.py
 │   ├── tools/health.py
 │   ├── tools/web_clip.py
 │   ├── rag/                 # ChromaDB + embeddings + RAG engine
@@ -126,7 +125,7 @@ py -m py_compile <file>    # quick syntax check before committing
 - **Executor** (`vault_writer/tools/executor.py`): dispatches on `ActionPlan.intent`, returns `(reply_text, keyboard | None)`
 - **Inline keyboards** (`telegram/keyboards.py`): all `InlineKeyboardMarkup` builders live here
 - **Callback router** (`telegram/handlers/callbacks.py`): dispatches on `query.data` prefix
-- **Gamification** (`vault_writer/tools/gamification.py`): persists to `<vault>/.brainsync/gamification.json`
+- **MCP server** (`vault_writer/server.py`): tools: `create_note`, `search_notes`, `classify_content`, `update_moc`, `get_vault_index`, `save_conversation`
 - **Settings persistence**: `callbacks.py::_persist_setting()` writes back to `config.yaml` via `yaml.dump`
 - **Charts**: always use `matplotlib.use("Agg")` (no display), wrap in try/except ImportError
 

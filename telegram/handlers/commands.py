@@ -364,21 +364,6 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         lines.append(f"\n*Last 30 days:* {sum(last30.values())} notes across {active_days} days")
         lines.append(f"*Best day:* {peak_day} ({peak_count} notes)")
 
-    gamification_path = None
-    try:
-        from pathlib import Path
-        import json
-        gf = Path(config.vault.path) / ".brainsync" / "gamification.json"
-        if gf.exists():
-            g = json.loads(gf.read_text(encoding="utf-8"))
-            level = g.get("level_name", "")
-            xp = g.get("total_xp", 0)
-            streak = g.get("streak_days", 0)
-            lines.append(f"\n*Level:* {level} ({xp} XP)")
-            lines.append(f"*Current streak:* {streak} days 🔥")
-    except Exception:
-        pass
-
     # Try to send a chart
     chart_sent = False
     try:

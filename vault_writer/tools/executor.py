@@ -471,15 +471,6 @@ async def _save_note(
                     result["file_path"], first_dup.matched_path,
                 )
 
-        # ── Gamification ──────────────────────────────────────────────────────
-        try:
-            from vault_writer.tools.gamification import on_note_saved
-            game_notifications = on_note_saved(config.vault.path)
-            if game_notifications:
-                reply += "\n\n" + "\n".join(game_notifications)
-        except Exception as exc:
-            logger.debug("executor: gamification: %s", exc)
-
         # ── Inline keyboard ───────────────────────────────────────────────────
         from telegram.keyboards import duplicate_actions, save_actions
         keyboard = duplicate_actions() if has_dup else save_actions(result["file_path"])
