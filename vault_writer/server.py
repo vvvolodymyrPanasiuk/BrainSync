@@ -39,10 +39,11 @@ app = Server("vault-writer")
 _config = None
 _index = None
 _provider = None
+_vector_store = None
 
 
 def _get_shared_state():
-    global _config, _index, _provider
+    global _config, _index, _provider, _vector_store
     if _config is None:
         config_path = os.environ.get("BRAINSYNC_CONFIG", str(_root / "config.yaml"))
         from config.loader import get_ai_provider, load_config, setup_logging
@@ -54,7 +55,17 @@ def _get_shared_state():
             _provider = get_ai_provider(_config)
         except Exception:
             _provider = None
-    return _config, _index, _provider
+        try:
+            from vault_writer.rag.embedder import SentenceTransformersEmbedder
+            from vault_writer.rag.vector_store import VectorStore
+            embedder = SentenceTransformersEmbedder(_config.embedding.model)
+            _vector_store = VectorStore(_config.embedding.index_path, embedder)
+            _vector_store.build_from_vault(_config.vault.path)
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger(__name__).warning("MCP: VectorStore init failed: %s", exc)
+            _vector_store = None
+    return _config, _index, _provider, _vector_store
 
 
 @app.list_tools()
@@ -144,7 +155,7 @@ async def list_tools() -> list[Tool]:
 
 @app.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-    config, index, provider = _get_shared_state()
+    config, index, provider, vector_store = _get_shared_state()
     from config.loader import SessionStats
 
     if name == "create_note":
@@ -176,6 +187,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             folder=arguments.get("folder"),
             index=index,
             vault_path=config.vault.path,
+            vector_store=vector_store,
         )
         return [TextContent(type="text", text=json.dumps(result))]
 

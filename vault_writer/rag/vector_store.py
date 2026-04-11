@@ -1,4 +1,4 @@
-"""VectorStore: ChromaDB wrapper for vault note embeddings."""
+"""VectorStore: ChromaDB wrapper for vault note embeddings + BM25 hybrid search."""
 from __future__ import annotations
 
 import hashlib
@@ -11,13 +11,16 @@ from vault_writer.rag.engine import SearchResult, SimilarityNotice
 logger = logging.getLogger(__name__)
 
 _COLLECTION_NAME = "vault_notes"
+_RRF_K = 60  # standard RRF constant
 
 
 class VectorStore:
     def __init__(self, index_path: str, embedder: EmbeddingProvider) -> None:
         import chromadb
+        from vault_writer.rag.bm25_index import BM25Index
         self._embedder = embedder
         self._building = False
+        self._bm25 = BM25Index()
         client = chromadb.PersistentClient(path=index_path)
         self._collection = client.get_or_create_collection(
             name=_COLLECTION_NAME,
@@ -30,20 +33,22 @@ class VectorStore:
             logger.info("VectorStore initialised empty index at %s", index_path)
 
     def upsert_note(self, file_path: str, content: str) -> None:
-        """Embed and upsert a note; skip if content hash unchanged."""
+        """Embed and upsert a note; skip vector update if content hash unchanged."""
         content_hash = hashlib.sha256(content.encode()).hexdigest()
         existing = self._collection.get(ids=[file_path], include=["metadatas"])
         if existing["ids"] and existing["metadatas"][0].get("hash") == content_hash:
-            logger.debug("upsert_note: unchanged hash, skipping %s", file_path)
-            return
-        embeddings = self._embedder.embed([content])
-        self._collection.upsert(
-            ids=[file_path],
-            embeddings=embeddings,
-            documents=[content],
-            metadatas=[{"hash": content_hash, "path": file_path}],
-        )
-        logger.debug("upsert_note: indexed %s (hash=%s)", file_path, content_hash[:8])
+            logger.debug("upsert_note: unchanged hash, skipping vector update for %s", file_path)
+        else:
+            embeddings = self._embedder.embed([content])
+            self._collection.upsert(
+                ids=[file_path],
+                embeddings=embeddings,
+                documents=[content],
+                metadatas=[{"hash": content_hash, "path": file_path}],
+            )
+            logger.debug("upsert_note: indexed %s (hash=%s)", file_path, content_hash[:8])
+        # Always keep BM25 in sync (fast, no embeddings)
+        self._bm25.upsert(file_path, content)
 
     def search(self, query: str, top_k: int) -> list[SearchResult]:
         """Semantic search over vault notes. Returns ranked SearchResult list."""
@@ -115,9 +120,49 @@ class VectorStore:
         return notices
 
     def delete_note(self, file_path: str) -> None:
-        """Remove a note from the index."""
+        """Remove a note from the vector and BM25 indexes."""
         self._collection.delete(ids=[file_path])
+        self._bm25.delete(file_path)
         logger.debug("delete_note: removed %s", file_path)
+
+    def hybrid_search(self, query: str, top_k: int) -> list[SearchResult]:
+        """Hybrid BM25 + vector search using Reciprocal Rank Fusion (RRF).
+
+        Falls back to pure vector search if BM25 is not ready.
+        """
+        vector_results = self.search(query, top_k)
+        if not self._bm25.is_ready:
+            return vector_results
+
+        bm25_raw = self._bm25.search(query, top_k)
+
+        # Build rank lists (path → rank position)
+        vector_ranked = [r.file_path for r in vector_results]
+        bm25_ranked = [path for path, _, _ in bm25_raw]
+
+        # RRF scoring
+        rrf_scores: dict[str, float] = {}
+        for rank, path in enumerate(vector_ranked):
+            rrf_scores[path] = rrf_scores.get(path, 0.0) + 1.0 / (_RRF_K + rank + 1)
+        for rank, path in enumerate(bm25_ranked):
+            rrf_scores[path] = rrf_scores.get(path, 0.0) + 1.0 / (_RRF_K + rank + 1)
+
+        # Build excerpt lookup from both result sets
+        excerpts: dict[str, str] = {r.file_path: r.excerpt for r in vector_results}
+        for path, _, excerpt in bm25_raw:
+            if path not in excerpts:
+                excerpts[path] = excerpt
+
+        # Sort by RRF score and return top_k
+        merged_paths = sorted(rrf_scores, key=lambda p: -rrf_scores[p])[:top_k]
+        return [
+            SearchResult(
+                file_path=p,
+                excerpt=excerpts.get(p, ""),
+                similarity=round(rrf_scores[p], 6),
+            )
+            for p in merged_paths
+        ]
 
     def count(self) -> int:
         return self._collection.count()
@@ -133,7 +178,6 @@ class VectorStore:
             vault = Path(vault_path)
             count = 0
             for md_file in vault.rglob("*.md"):
-                # Skip MoC files (names starting with "0 ")
                 if md_file.name.startswith("0 "):
                     continue
                 try:

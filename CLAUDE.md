@@ -78,7 +78,7 @@ BrainSync/
 │   ├── tools/executor.py    # ActionPlan dispatcher
 │   ├── tools/health.py
 │   ├── tools/web_clip.py
-│   ├── rag/                 # ChromaDB + embeddings + RAG engine
+│   ├── rag/                 # BM25 + ChromaDB embeddings + hybrid search + RAG engine
 │   └── vault/               # writer, indexer, structure
 ├── telegram/
 │   ├── bot.py               # All handler registration
@@ -125,6 +125,7 @@ py -m py_compile <file>    # quick syntax check before committing
 - **Executor** (`vault_writer/tools/executor.py`): dispatches on `ActionPlan.intent`, returns `(reply_text, keyboard | None)`
 - **Inline keyboards** (`telegram/keyboards.py`): all `InlineKeyboardMarkup` builders live here
 - **Callback router** (`telegram/handlers/callbacks.py`): dispatches on `query.data` prefix
+- **Hybrid search** (`vault_writer/rag/`): BM25 (`bm25_index.py`) + ChromaDB vectors merged via RRF in `vector_store.hybrid_search()`; used by RAG, Telegram search, and MCP `search_notes`
 - **MCP server** (`vault_writer/server.py`): tools: `create_note`, `search_notes`, `classify_content`, `update_moc`, `get_vault_index`, `save_conversation`
 - **Settings persistence**: `callbacks.py::_persist_setting()` writes back to `config.yaml` via `yaml.dump`
 - **Charts**: always use `matplotlib.use("Agg")` (no display), wrap in try/except ImportError

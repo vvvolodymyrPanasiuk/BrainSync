@@ -76,7 +76,7 @@ BrainSync solves two problems: **capture** and **retrieval**.
 ### Intelligence
 
 - **AI Semantic Router** — every plain-text message goes through a single AI call that returns an `ActionPlan`: intent, target folder (4-level hierarchy), note type, tags, title, and whether to save, search, or answer.
-- **Semantic search** — natural language queries use multilingual vector embeddings (50+ languages); finds notes by meaning, not exact words.
+- **Hybrid search** — combines BM25 keyword ranking with vector semantic embeddings via Reciprocal Rank Fusion (RRF); finds notes by exact terms *and* by meaning.
 - **RAG answers** — questions about your vault get synthesized answers grounded exclusively in your own notes, with source citations.
 - **Duplicate detection** — after every note save, checks for semantically similar existing notes (≥ 85% similarity) and offers to merge.
 - **Web clipping** — paste any URL; the bot fetches the page and AI-summarises it into a structured vault note.
@@ -114,7 +114,7 @@ BrainSync solves two problems: **capture** and **retrieval**.
 ### Infrastructure
 
 - **Fully offline capable** — sentence-transformers for embeddings, Ollama for AI, Whisper for voice
-- **Vector index persists** — ChromaDB stores embeddings in `data/chroma/`; survives restarts
+- **Hybrid index persists** — ChromaDB stores vector embeddings in `data/chroma/`; BM25 index rebuilt in-memory at startup; both survive restarts
 - **Background indexing** — vault indexed at startup without blocking the bot
 
 ---
@@ -599,7 +599,8 @@ BrainSync/
 │   │
 │   ├── rag/
 │   │   ├── embedder.py            # EmbeddingProvider (sentence-transformers + Ollama)
-│   │   ├── vector_store.py        # ChromaDB wrapper (upsert, search, find_similar)
+│   │   ├── bm25_index.py          # BM25Okapi index (in-memory, rank-bm25)
+│   │   ├── vector_store.py        # ChromaDB wrapper + hybrid_search (BM25+vector RRF)
 │   │   └── engine.py              # answer_query(), search_vault()
 │   │
 │   ├── vault/
@@ -746,6 +747,7 @@ Use the vault-writer save_conversation tool with the full conversation text.
 | `pypdf` | Local PDF text extraction |
 | `chromadb` | Embedded vector database |
 | `sentence-transformers` | Multilingual text embeddings (offline) |
+| `rank-bm25` | BM25 full-text index for hybrid search |
 | `requests` | HTTP calls for Ollama API and web clipping |
 | `pytest` | Tests |
 | `ffmpeg` (system) | Audio decoding — `winget install ffmpeg` |

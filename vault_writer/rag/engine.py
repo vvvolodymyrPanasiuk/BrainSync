@@ -44,8 +44,9 @@ Answer:"""
 
 
 def answer_query(query: str, store, provider, top_k: int, config=None) -> RAGResult:
-    """Retrieve relevant notes and generate a RAG answer grounded in vault content."""
-    results = store.search(query, top_k)
+    """Retrieve relevant notes via hybrid search and generate a RAG answer."""
+    _search = getattr(store, "hybrid_search", store.search)
+    results = _search(query, top_k)
     if not results:
         logger.info("RAG query returned no results for: %.50s", query)
         return RAGResult(answer="", sources=[], query=query, found=False)
@@ -65,5 +66,6 @@ def answer_query(query: str, store, provider, top_k: int, config=None) -> RAGRes
 
 
 def search_vault(query: str, store, top_k: int) -> list[SearchResult]:
-    """Semantic vault search — delegates to VectorStore.search()."""
-    return store.search(query, top_k)
+    """Hybrid vault search — uses BM25 + vector RRF when available."""
+    _search = getattr(store, "hybrid_search", store.search)
+    return _search(query, top_k)
