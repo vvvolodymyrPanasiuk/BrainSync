@@ -42,9 +42,9 @@ After that it starts the bot automatically.
 | 1 | [Create a Telegram bot](#prerequisites) via [@BotFather](https://t.me/BotFather) → `/newbot`, copy the token |
 | 2 | Get your Telegram user ID from [@userinfobot](https://t.me/userinfobot) |
 | 3 | Install [Claude Code CLI](https://claude.ai/download) — `claude --version` to verify |
-| 4 | Install ffmpeg — `winget install ffmpeg` / `brew install ffmpeg` / `sudo apt install ffmpeg` |
-| 5 | Have an [Ollama](https://ollama.com) instance running **or** an Anthropic API key ready |
-| 6 | After the bot is running, [register commands in BotFather](#botfather-command-setup) |
+| 4 | Have an [Ollama](https://ollama.com) instance running **or** an Anthropic API key ready |
+| 5 | After the bot is running, [register commands in BotFather](#botfather-command-setup) |
+| 6 | *(Optional)* Install ffmpeg for voice messages — see [Voice messages](#voice-messages) |
 
 ---
 
@@ -141,16 +141,10 @@ BrainSync solves two problems: **capture** and **retrieval**.
    # https://claude.ai/download
    claude --version    # verify installation
    ```
-4. **ffmpeg** — required for voice message decoding:
-   ```
-   winget install ffmpeg        # Windows
-   brew install ffmpeg          # macOS
-   sudo apt install ffmpeg      # Ubuntu/Debian
-   ```
-5. **An Obsidian vault** — an existing folder where your `.md` notes live. The Obsidian app does not need to be running.
-6. **A Telegram bot** — create via [@BotFather](https://t.me/BotFather), copy the token.
-7. **Your Telegram user ID** — get from [@userinfobot](https://t.me/userinfobot).
-8. **AI backend** — Claude Code supports two backends:
+4. **An Obsidian vault** — an existing folder where your `.md` notes live. The Obsidian app does not need to be running.
+5. **A Telegram bot** — create via [@BotFather](https://t.me/BotFather), copy the token.
+6. **Your Telegram user ID** — get from [@userinfobot](https://t.me/userinfobot).
+7. **AI backend** — Claude Code supports two backends:
    - **Ollama** (recommended, local, free) — install [Ollama](https://ollama.com), then `ollama pull kimi-k2.5:cloud`
    - **Anthropic** (cloud) — [Anthropic API key](https://console.anthropic.com), set `ANTHROPIC_API_KEY` env var
 
@@ -332,6 +326,13 @@ Any plain message **without** a prefix or slash command is routed through the AI
 ### Voice messages
 Hold mic → BrainSync transcribes on-device via Whisper (Ukrainian supported) → saves as note.
 Limit: `media.max_voice_duration_seconds` (default 300s). Whisper `small` model (~466 MB) downloads on first use.
+
+Requires **ffmpeg** on the system PATH:
+```bash
+winget install ffmpeg        # Windows
+brew install ffmpeg          # macOS
+sudo apt install ffmpeg      # Ubuntu/Debian
+```
 
 ### Photos
 BrainSync sends the image to AI for visual description → saves as note.
