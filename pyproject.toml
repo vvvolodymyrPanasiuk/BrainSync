@@ -15,7 +15,6 @@ dependencies = [
     "chromadb",
     "sentence-transformers",
     "matplotlib>=3.10.8",
-    "networkx>=3.6.1",
 ]
 
 [dependency-groups]

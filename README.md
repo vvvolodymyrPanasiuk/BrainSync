@@ -76,24 +76,20 @@ BrainSync solves two problems: **capture** and **retrieval**.
 ### Intelligence
 
 - **AI Semantic Router** — every plain-text message goes through a single AI call that returns an `ActionPlan`: intent, target folder (4-level hierarchy), note type, tags, title, and whether to save, search, or answer.
-- **Semantic search** — `/search` and natural language queries use vector embeddings; finds notes by meaning, not exact words. Works in Ukrainian.
+- **Semantic search** — natural language queries use multilingual vector embeddings (50+ languages); finds notes by meaning, not exact words.
 - **RAG answers** — questions about your vault get synthesized answers grounded exclusively in your own notes, with source citations.
 - **Duplicate detection** — after every note save, checks for semantically similar existing notes (≥ 85% similarity) and offers to merge.
-- **Smart note splitting** — if a message covers multiple unrelated topics, AI automatically splits it into separate notes.
 - **Web clipping** — paste any URL; the bot fetches the page and AI-summarises it into a structured vault note.
 - **YouTube × NotebookLM** — paste a YouTube URL to open an interactive Q&A session powered by NotebookLM; save the session as a vault note when done.
-- **Knowledge gap analysis** — `/gaps <topic>` asks AI to identify missing subtopics in your vault for a given subject.
 
 ### Vault management
 
 - **Map of Content** — index files auto-updated every time a note is added to a topic
 - **4-level folder hierarchy** — `GeneralCategory/Topic/Subtopic/Section`
 - **Auto wikilinks** — related notes automatically linked to each other on save
-- **Vault health check** — `/health` reports orphan notes, broken links, missing aliases, and potential duplicates
 - **Note merge** — merge a new note with an existing duplicate via inline button (with confirmation dialog)
-- **Note move** — move notes to different folders via `/move` command or inline button after save
+- **Note move** — tell the bot in plain language to move a note; AI resolves target folder and relocates the file
 - **Tag management** — add tags to any saved note via inline button
-- **Group Topics** — map Telegram Forum Topic threads to vault folders; `/register-topic` once per thread
 
 ### Gamification
 
@@ -105,7 +101,6 @@ BrainSync solves two problems: **capture** and **retrieval**.
 ### Analytics & Visualization
 
 - **`/stats`** — total notes, per-folder bar chart, 30-day activity line chart, XP/streak; sends as PNG chart if matplotlib installed
-- **`/graph`** — knowledge graph PNG showing wikilink connections between notes, colored by folder; requires `networkx` + `matplotlib`
 - **Scheduled summaries** — daily text digest; weekly and monthly reports include 2–3 panel PNG charts (notes by topic, daily activity, type breakdown, month-over-month comparison)
 
 ### Automation
@@ -151,9 +146,9 @@ BrainSync solves two problems: **capture** and **retrieval**.
 > **Why Claude Code CLI?**
 > Unlike direct API calls, Claude Code gives the bot full tool access: web search, file reading, bash execution, and MCP servers — with zero custom implementation. Ask "what's the ETH price?" or "current time in Tokyo?" and the bot actually searches the web to answer.
 
-**Optional** (for charts and graph):
+**Optional** (for charts in `/stats` and scheduled reports):
 ```bash
-pip install networkx matplotlib numpy
+pip install matplotlib numpy
 ```
 
 **Optional** (for YouTube × NotebookLM):
@@ -242,44 +237,25 @@ The wizard creates `config.yaml` (gitignored — never committed).
 
 ## Bot commands
 
-### Notes
+### Capture & vault
 
 | Command | Description |
 |---------|-------------|
-| `/note <text>` | Save a note |
-| `/task <text>` | Save a task |
-| `/idea <text>` | Save an idea |
-| `/journal <text>` | Save a journal entry |
 | `/clip <url>` | Fetch a web page, AI-summarise, and save as note |
-
-### Vault
-
-| Command | Description |
-|---------|-------------|
-| `/search <query>` | Semantic vault search |
 | `/today` | Today's saved notes + all open tasks |
-| `/health` | Vault health check: orphans, broken links, missing aliases, duplicates |
-| `/move <topic> -> <folder>` | Move a note to a different folder |
-| `/merge` | Merge newest note with detected duplicate (shows confirmation dialog) |
 | `/stats` | Vault statistics with bar/line charts (PNG if matplotlib installed) |
-| `/graph` | Knowledge graph PNG of wikilink connections (requires networkx + matplotlib) |
-| `/gaps <topic>` | AI analysis of missing subtopics in your vault for a given subject |
-
-### Groups & Routing
-
-| Command | Description |
-|---------|-------------|
-| `/registertopic <FolderName>` | Map current Telegram Forum Topic thread to a vault folder |
 
 ### System
 
 | Command | Description |
 |---------|-------------|
-| `/settings` | Inline settings menu — toggle auto-commit, wikilinks, MoC, daily summary |
+| `/settings` | Inline settings menu — AI provider, schedules, language, wikilinks, MoC, auto-commit |
 | `/status` | Bot status, session stats, AI provider info |
 | `/reload` | Hot-reload `config.yaml` without restarting the bot |
 | `/reindex` | Rebuild the vector index from all vault notes |
 | `/help` | Full command reference |
+
+> **No commands for saving notes** — just send a plain message and the AI router decides what to do. Use inline prefixes (`note:`, `task:`, `idea:`, `journal:`) to force a specific type without AI routing.
 
 ---
 
@@ -295,8 +271,8 @@ After creating your bot, register the commands so they appear in the Telegram co
 clip - Fetch a web page, summarise, and save as note
 today - Today's notes + open tasks
 stats - Vault statistics with charts
-settings - Settings menu (AI, schedule, language)
-status - Bot status & AI provider info
+settings - AI provider, schedules, language, enrichment options
+status - Bot status and AI provider info
 reload - Hot-reload config without restart
 reindex - Rebuild vector search index
 help - Command reference
@@ -784,6 +760,5 @@ Available MCP tools: `create_note`, `search_notes`, `classify_content`, `update_
 | `requests` | HTTP calls for Ollama API and web clipping |
 | `pytest` | Tests |
 | `ffmpeg` (system) | Audio decoding — `winget install ffmpeg` |
-| `matplotlib` + `numpy` | Charts for `/stats`, `/graph`, scheduled summaries *(optional)* |
-| `networkx` | Knowledge graph generation for `/graph` *(optional)* |
+| `matplotlib` + `numpy` | Charts for `/stats` and scheduled summaries *(optional)* |
 | `notebooklm-py` | YouTube × NotebookLM integration *(optional)* |
