@@ -1,0 +1,8 @@
+# Normalise line endings: LF in repo, native checkout
+* text=auto
+
+# Shell scripts must stay LF so they execute on macOS/Linux
+*.sh text eol=lf
+
+# Windows batch files stay CRLF
+*.bat text eol=crlf

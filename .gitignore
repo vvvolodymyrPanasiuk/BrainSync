@@ -19,3 +19,5 @@ Thumbs.db
 *.tmp
 *.swp
 data/chroma/
+bot_runner.pid
+eth_price

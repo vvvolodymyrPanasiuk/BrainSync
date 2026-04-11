@@ -31,7 +31,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "error_prefix":       "❌ Error: {error}",
         "ai_unavailable":     "❌ AI provider is not responding. Check that Ollama is running and the model is loaded, or verify your API key.",
         "ai_not_ready":       "⚠️ BrainSync is not ready yet — AI failed to load on startup. Check the error message sent at startup and restart the bot.",
-        "duplicate_note":     "⚠️ Similar note already exists:\n→ {path} ({pct}%)\n💡 Merge with it? /merge",
+        "duplicate_note":     "⚠️ Similar note already exists:\n→ {path} ({pct}%)",
         "related_note":       "💡 Possibly related note:\n→ {path} ({pct}%)",
         "merge_no_pending":   "No pending merge. Save a note first — if a duplicate is detected, /merge will be shown.",
         "merge_done":         "✅ Merged into `{dest}`\nDeleted: `{src}`",
@@ -43,7 +43,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "split_saved":        "📝 Split into {count} notes:",
         "merge_confirm":      "⚠️ Merge confirmation:\n• New: `{new}`\n• Into: `{dup}`\n\nThe new note will be deleted. Confirm?",
         "merge_cancelled":    "❌ Merge cancelled.",
-        "settings_header":    "⚙️ *BrainSync Settings*\n\nTap a button to toggle:",
+        "settings_header":          "⚙️ *BrainSync Settings*\n\nChoose a section:",
+        "settings_notes_header":    "📝 *Notes*\n\nToggle note enrichment options:",
+        "settings_schedules_header": "📅 *Schedules*\n\nToggle reports and set their times.\nTime changes take effect after restart.",
+        "settings_ai_header":       "🤖 *AI Provider*\n\nSelect provider and model.\nChanges take effect after restart.",
+        "settings_language_header": "🌐 *Language*\n\nChoose bot interface language:",
         "settings_saved":     "✅ Setting updated: `{key}` → `{value}`",
         "stats_header":       "📊 *Vault Statistics*",
         "gaps_thinking":      "🔍 Analyzing knowledge gaps…",
@@ -56,31 +60,15 @@ STRINGS: dict[str, dict[str, str]] = {
         "progress_thinking":  "⏳ Thinking…",
         "help_text": (
             "📋 *BrainSync commands*\n\n"
-            "*Notes*\n"
-            "`/note <text>` — save a note\n"
-            "`/task <text>` — save a task\n"
-            "`/idea <text>` — save an idea\n"
-            "`/journal <text>` — save a journal entry\n"
+            "Just send a message — AI will classify and save it automatically.\n"
             "`/clip <url>` — fetch & summarise a web page\n"
-            "YouTube URL — interactive Q&A via NotebookLM\n\n"
-            "*Vault*\n"
-            "`/search <query>` — semantic vault search\n"
-            "`/today` — today's notes + all open tasks\n"
+            "`/today` — today's notes + open tasks\n"
             "`/stats` — vault statistics with charts\n"
-            "`/graph` — knowledge graph PNG\n"
-            "`/gaps <topic>` — find missing subtopics in your vault\n"
-            "`/health` — vault health check (orphans, broken links)\n"
-            "`/move <topic> -> <folder>` — move a note\n"
-            "`/merge` — merge note with detected duplicate\n\n"
-            "*Groups*\n"
-            "`/registertopic <Folder>` — map Telegram thread to vault folder\n\n"
-            "*System*\n"
-            "`/settings` — toggle auto-commit, wikilinks, MoC, daily summary\n"
-            "`/status` — bot status, session stats, AI provider info\n"
-            "`/reload` — hot-reload config.yaml without restart\n"
+            "`/settings` — toggle auto-commit, wikilinks, MoC, summaries\n"
+            "`/status` — bot status & AI provider info\n"
+            "`/reload` — hot-reload config without restart\n"
             "`/reindex` — rebuild vector search index\n"
-            "`/help` — this message\n\n"
-            "_You can also just send a plain message — AI will classify and save it automatically._"
+            "`/help` — this message\n"
         ),
     },
     "uk": {
@@ -110,7 +98,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "error_prefix":       "❌ Помилка: {error}",
         "ai_unavailable":     "❌ AI провайдер не відповідає. Перевірте що Ollama запущений та модель завантажена, або правильність API ключа.",
         "ai_not_ready":       "⚠️ BrainSync ще не готовий — AI не завантажився при старті. Перегляньте повідомлення про помилку, яке прийшло при запуску, і перезапустіть бота.",
-        "duplicate_note":     "⚠️ Схожа нотатка вже існує:\n→ {path} ({pct}%)\n💡 Об'єднати? /merge",
+        "duplicate_note":     "⚠️ Схожа нотатка вже існує:\n→ {path} ({pct}%)",
         "related_note":       "💡 Можливо пов'язана нотатка:\n→ {path} ({pct}%)",
         "merge_no_pending":   "Немає незавершеного об'єднання. Спочатку збережіть нотатку — якщо виявлено дублікат, з'явиться /merge.",
         "merge_done":         "✅ Об'єднано у `{dest}`\nВидалено: `{src}`",
@@ -122,7 +110,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "split_saved":        "📝 Розбито на {count} нотатки:",
         "merge_confirm":      "⚠️ Підтвердження об'єднання:\n• Нова: `{new}`\n• У: `{dup}`\n\nНову нотатку буде видалено. Підтвердити?",
         "merge_cancelled":    "❌ Об'єднання скасовано.",
-        "settings_header":    "⚙️ *Налаштування BrainSync*\n\nНатисніть кнопку для зміни:",
+        "settings_header":          "⚙️ *Налаштування BrainSync*\n\nОберіть розділ:",
+        "settings_notes_header":    "📝 *Нотатки*\n\nОпції збагачення нотаток:",
+        "settings_schedules_header": "📅 *Звіти*\n\nВмикайте звіти та налаштовуйте час.\nЗміна часу набере чинності після перезапуску.",
+        "settings_ai_header":       "🤖 *AI провайдер*\n\nОберіть провайдера та модель.\nЗміни набудуть чинності після перезапуску.",
+        "settings_language_header": "🌐 *Мова*\n\nОберіть мову інтерфейсу бота:",
         "settings_saved":     "✅ Налаштування оновлено: `{key}` → `{value}`",
         "stats_header":       "📊 *Статистика Vault*",
         "gaps_thinking":      "🔍 Аналізую прогалини знань…",
@@ -135,31 +127,15 @@ STRINGS: dict[str, dict[str, str]] = {
         "progress_thinking":  "⏳ Думаю…",
         "help_text": (
             "📋 *Команди BrainSync*\n\n"
-            "*Нотатки*\n"
-            "`/note <текст>` — зберегти нотатку\n"
-            "`/task <текст>` — зберегти завдання\n"
-            "`/idea <текст>` — зберегти ідею\n"
-            "`/journal <текст>` — зберегти запис у щоденник\n"
+            "Просто надішли повідомлення — AI автоматично класифікує та збереже його.\n"
             "`/clip <url>` — завантажити та узагальнити веб-сторінку\n"
-            "YouTube URL — інтерактивні Q&A через NotebookLM\n\n"
-            "*Vault*\n"
-            "`/search <запит>` — семантичний пошук по vault\n"
-            "`/today` — нотатки за сьогодні + всі відкриті завдання\n"
+            "`/today` — нотатки за сьогодні + відкриті завдання\n"
             "`/stats` — статистика vault із графіками\n"
-            "`/graph` — граф знань (PNG)\n"
-            "`/gaps <тема>` — аналіз прогалин у знаннях\n"
-            "`/health` — перевірка vault (сироти, зламані посилання)\n"
-            "`/move <тема> -> <папка>` — перемістити нотатку\n"
-            "`/merge` — об'єднати нотатку з виявленим дублікатом\n\n"
-            "*Групи*\n"
-            "`/registertopic <Папка>` — прив'язати топік Telegram до папки vault\n\n"
-            "*Система*\n"
-            "`/settings` — перемкнути auto-commit, wikilinks, MoC, daily summary\n"
-            "`/status` — статус бота, статистика сесії, інфо про AI\n"
-            "`/reload` — перезавантажити config.yaml без перезапуску\n"
-            "`/reindex` — перебудувати індекс семантичного пошуку\n"
-            "`/help` — це повідомлення\n\n"
-            "_Можна також просто надіслати звичайне повідомлення — AI автоматично класифікує та збереже його._"
+            "`/settings` — перемкнути auto-commit, wikilinks, MoC, дайджест\n"
+            "`/status` — статус бота та AI провайдера\n"
+            "`/reload` — перезавантажити config без перезапуску\n"
+            "`/reindex` — перебудувати індекс пошуку\n"
+            "`/help` — це повідомлення\n"
         ),
     },
 }

@@ -54,6 +54,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _do_clip(update, context, text.strip())
         return
 
+    # ── Pending settings text input ───────────────────────────────────────────
+    from telegram.handlers.callbacks import handle_settings_text_input
+    if await handle_settings_text_input(update, context):
+        return
+
     # ── Pending inline actions (move / tags) ──────────────────────────────────
     if await _handle_pending_inline(update, context, text):
         return

@@ -6,8 +6,6 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from vault_writer.vault.writer import NoteType
-
 logger = logging.getLogger(__name__)
 
 
@@ -19,121 +17,6 @@ def auth_check(update: Update, config) -> bool:
         return False
     return True
 
-
-async def cmd_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config = context.bot_data["config"]
-    if not auth_check(update, config):
-        return
-    text = " ".join(context.args) if context.args else ""
-    if not text:
-        await update.message.reply_text("Використання: /note <текст>")
-        return
-    await _save_with_type(update, context, text, NoteType.NOTE)
-
-
-async def cmd_task(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config = context.bot_data["config"]
-    if not auth_check(update, config):
-        return
-    text = " ".join(context.args) if context.args else ""
-    if not text:
-        await update.message.reply_text("Використання: /task <текст>")
-        return
-    await _save_with_type(update, context, text, NoteType.TASK)
-
-
-async def cmd_idea(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config = context.bot_data["config"]
-    if not auth_check(update, config):
-        return
-    text = " ".join(context.args) if context.args else ""
-    if not text:
-        await update.message.reply_text("Використання: /idea <текст>")
-        return
-    await _save_with_type(update, context, text, NoteType.IDEA)
-
-
-async def cmd_journal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config = context.bot_data["config"]
-    if not auth_check(update, config):
-        return
-    text = " ".join(context.args) if context.args else ""
-    if not text:
-        await update.message.reply_text("Використання: /journal <текст>")
-        return
-    await _save_with_type(update, context, text, NoteType.JOURNAL)
-
-
-async def _save_with_type(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, note_type: NoteType) -> None:
-    from telegram.constants import ChatAction
-    from vault_writer.tools.create_note import handle_create_note
-    from telegram.handlers.message import _run_create_note
-
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    config = context.bot_data["config"]
-    index = context.bot_data["index"]
-    stats = context.bot_data["stats"]
-    provider = context.bot_data.get("provider")
-
-    result = await _run_create_note(text, note_type, None, config, index, stats, provider)
-    reply = _format_result(result, config)
-    await update.message.reply_text(reply)
-
-    # Git commit
-    if result.get("success") and config.git.enabled and config.git.auto_commit:
-        _git_commit(result["file_path"], config)
-
-
-async def cmd_move(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Explicit note move: /move <тема нотатки> -> <папка призначення>"""
-    config = context.bot_data["config"]
-    if not auth_check(update, config):
-        return
-    text = " ".join(context.args) if context.args else ""
-    if not text or "->" not in text:
-        await update.message.reply_text(
-            "Використання: /move <тема нотатки> -> <папка призначення>\n"
-            "Наприклад: /move лазанья -> Кулінарія"
-        )
-        return
-
-    from telegram.constants import ChatAction
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-
-    parts = text.split("->", 1)
-    topic = parts[0].strip()
-    dest_folder = parts[1].strip()
-
-    # Build a minimal plan for the executor
-    from vault_writer.ai.router import ActionPlan, Intent
-    import asyncio
-    plan = ActionPlan(
-        intent=Intent.MOVE_NOTE,
-        confidence=1.0,
-        should_save=False,
-        needs_web=False,
-        needs_clarification=False,
-        note_type="note",
-        general_category="",
-        target_folder=dest_folder,
-        target_subfolder="",
-        section="",
-        topic=topic,
-        tags=[],
-        summary=topic,
-        actions=["move_note"],
-        sources=[],
-        reason="explicit /move command",
-        title=topic,
-    )
-
-    index = context.bot_data["index"]
-    vector_store = context.bot_data.get("vector_store")
-
-    loop = asyncio.get_running_loop()
-    from vault_writer.tools.executor import _move_note
-    reply = await _move_note(topic, plan, config, index, vector_store)
-    await update.message.reply_text(reply, parse_mode="Markdown")
 
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -185,54 +68,6 @@ async def cmd_reload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text(f"❌ Reload failed: `{exc}`", parse_mode="Markdown")
 
 
-async def cmd_register_topic(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Register current forum thread as a vault folder: /register-topic <FolderName>.
-
-    Run this command once inside a Telegram Forum Topic to map that thread
-    to a vault folder (e.g. /register-topic Finance/Trading).
-    """
-    config = context.bot_data["config"]
-    if not auth_check(update, config):
-        return
-
-    folder = " ".join(context.args).strip() if context.args else ""
-    if not folder:
-        await update.message.reply_text(
-            "Usage: `/register-topic FolderName`\n"
-            "Example: `/register-topic Finance/Trading`",
-            parse_mode="Markdown",
-        )
-        return
-
-    thread_id = getattr(update.message, "message_thread_id", None)
-    if not thread_id:
-        await update.message.reply_text(
-            "❌ This command must be used inside a Forum Topic thread."
-        )
-        return
-
-    chat_id = str(update.message.chat_id)
-    topic_map = context.bot_data.setdefault("topic_map", {})
-    topic_map.setdefault(chat_id, {})[str(thread_id)] = folder
-
-    await update.message.reply_text(
-        f"✅ Thread registered as vault folder: `{folder}`\n"
-        "Messages in this thread will now be routed to that folder.",
-        parse_mode="Markdown",
-    )
-
-
-async def cmd_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Run vault health check and report orphans, broken links, duplicates."""
-    config = context.bot_data["config"]
-    if not auth_check(update, config):
-        return
-    index = context.bot_data["index"]
-
-    from vault_writer.tools.health import run_health_check
-    from telegram.formatter import format_health_report
-    report = run_health_check(config.vault.path, index)
-    await update.message.reply_text(format_health_report(report))
 
 
 async def cmd_clip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -464,16 +299,16 @@ async def _do_merge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show interactive settings menu with toggle buttons."""
+    """Show interactive settings menu."""
     config = context.bot_data["config"]
     if not auth_check(update, config):
         return
-    from telegram.keyboards import settings_keyboard
+    from telegram.keyboards import settings_main_keyboard
     from telegram.i18n import t
     await update.message.reply_text(
         t("settings_header"),
         parse_mode="Markdown",
-        reply_markup=settings_keyboard(config),
+        reply_markup=settings_main_keyboard(),
     )
 
 
@@ -595,184 +430,6 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
-async def cmd_gaps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """AI-powered knowledge gap analysis: /gaps <topic>"""
-    config = context.bot_data["config"]
-    if not auth_check(update, config):
-        return
-
-    topic = " ".join(context.args).strip() if context.args else ""
-    if not topic:
-        await update.message.reply_text(
-            "Usage: `/gaps <topic>`\nExample: `/gaps Python async`",
-            parse_mode="Markdown",
-        )
-        return
-
-    provider = context.bot_data.get("provider")
-    from telegram.i18n import t
-    if provider is None:
-        await update.message.reply_text(t("gaps_no_ai"))
-        return
-
-    index = context.bot_data["index"]
-    from telegram.constants import ChatAction
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    await update.message.reply_text(t("gaps_thinking"))
-
-    from collections import Counter
-    folder_counts: Counter = Counter(n.folder for n in index.notes.values())
-    # Get notes related to the topic (fuzzy match on folder/title)
-    topic_lower = topic.lower()
-    related = [
-        f"{n.title} ({n.folder})"
-        for n in index.notes.values()
-        if topic_lower in n.folder.lower() or topic_lower in n.title.lower()
-    ][:30]
-
-    vault_summary = "\n".join(f"  • {folder}: {count}" for folder, count in folder_counts.most_common(20))
-    related_summary = "\n".join(f"  - {r}" for r in related) if related else "  (no direct matches)"
-
-    prompt = (
-        f"You are a personal knowledge management expert analyzing a user's Obsidian vault.\n\n"
-        f"The user wants to identify knowledge gaps related to: **{topic}**\n\n"
-        f"Vault structure (folder: note count):\n{vault_summary}\n\n"
-        f"Existing notes matching '{topic}':\n{related_summary}\n\n"
-        f"Based on this, what important subtopics, concepts, or areas are MISSING or underdeveloped? "
-        f"Give specific, actionable suggestions in the same language as '{topic}'. "
-        f"Format as a numbered list with brief explanations. Be concrete and practical."
-    )
-
-    import asyncio
-    loop = asyncio.get_running_loop()
-    try:
-        answer = await loop.run_in_executor(None, provider.complete, prompt)
-        await update.message.reply_text(
-            t("gaps_header", topic=topic) + answer,
-            parse_mode="Markdown",
-        )
-    except Exception as exc:
-        logger.error("cmd_gaps: AI failed: %s", exc)
-        await update.message.reply_text(f"❌ AI error: `{exc}`", parse_mode="Markdown")
-
-
-async def cmd_graph(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Generate and send a knowledge graph PNG of vault wikilinks."""
-    config = context.bot_data["config"]
-    if not auth_check(update, config):
-        return
-
-    from telegram.i18n import t
-    await update.message.reply_text(t("graph_building"))
-
-    try:
-        import networkx as nx
-    except ImportError:
-        await update.message.reply_text(t("graph_no_lib"), parse_mode="Markdown")
-        return
-
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        import io
-    except ImportError:
-        await update.message.reply_text(t("graph_no_lib"), parse_mode="Markdown")
-        return
-
-    import re
-    from pathlib import Path
-    from telegram.constants import ChatAction
-
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-
-    index = context.bot_data["index"]
-    vault = Path(config.vault.path)
-    wikilink_re = re.compile(r"\[\[([^\]|#]+)")
-
-    G = nx.Graph()
-    folder_map: dict[str, str] = {}
-
-    for rel_path, note in index.notes.items():
-        title = note.title or Path(rel_path).stem
-        top_folder = note.folder.split("/")[0] if note.folder else "General"
-        G.add_node(title)
-        folder_map[title] = top_folder
-
-        full = vault / rel_path
-        if not full.exists():
-            continue
-        try:
-            content = full.read_text(encoding="utf-8", errors="ignore")
-            for m in wikilink_re.finditer(content):
-                target = m.group(1).strip()
-                if target and target != title:
-                    G.add_edge(title, target)
-        except Exception:
-            continue
-
-    if G.number_of_edges() == 0:
-        await update.message.reply_text(t("graph_empty"))
-        return
-
-    # Keep only nodes with edges (remove isolates for clarity)
-    isolates = list(nx.isolates(G))
-    G.remove_nodes_from(isolates)
-
-    if G.number_of_nodes() == 0:
-        await update.message.reply_text(t("graph_empty"))
-        return
-
-    # Assign colors by folder
-    unique_folders = list(set(folder_map.values()))
-    cmap = plt.cm.get_cmap("tab20", len(unique_folders))
-    folder_color = {f: cmap(i) for i, f in enumerate(unique_folders)}
-    node_colors = [folder_color.get(folder_map.get(n, "General"), (0.5, 0.5, 0.5, 1)) for n in G.nodes()]
-
-    fig, ax = plt.subplots(figsize=(14, 10))
-    fig.patch.set_facecolor("#1e1e2e")
-    ax.set_facecolor("#1e1e2e")
-
-    # Layout
-    try:
-        pos = nx.spring_layout(G, k=2.0, seed=42, iterations=50)
-    except Exception:
-        pos = nx.random_layout(G, seed=42)
-
-    node_size = [max(100, 50 * G.degree(n)) for n in G.nodes()]
-
-    nx.draw_networkx_edges(G, pos, ax=ax, alpha=0.3, edge_color="#585b70", width=0.8)
-    nx.draw_networkx_nodes(G, pos, ax=ax, node_color=node_colors, node_size=node_size, alpha=0.9)
-
-    # Labels only for high-degree nodes
-    degree_threshold = max(2, G.number_of_nodes() // 15)
-    labels = {n: n for n in G.nodes() if G.degree(n) >= degree_threshold}
-    nx.draw_networkx_labels(G, pos, labels, ax=ax, font_size=7, font_color="#cdd6f4")
-
-    # Legend
-    legend_items = [
-        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=folder_color[f], markersize=8, label=f)
-        for f in unique_folders[:12]
-    ]
-    ax.legend(handles=legend_items, loc="upper left", framealpha=0.3,
-              facecolor="#313244", labelcolor="#cdd6f4", fontsize=7)
-
-    ax.set_title(
-        f"Knowledge Graph — {G.number_of_nodes()} notes, {G.number_of_edges()} links",
-        color="#cdd6f4", fontsize=12,
-    )
-    ax.axis("off")
-    plt.tight_layout()
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", facecolor=fig.get_facecolor(), dpi=120)
-    plt.close(fig)
-    buf.seek(0)
-
-    await update.message.reply_photo(
-        buf,
-        caption=f"🕸️ Knowledge graph: {G.number_of_nodes()} notes · {G.number_of_edges()} links",
-    )
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -794,39 +451,6 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     from telegram.formatter import format_status
     await update.message.reply_text(format_status(config, stats, index))
 
-
-async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    config = context.bot_data["config"]
-    if not auth_check(update, config):
-        return
-    query = " ".join(context.args) if context.args else ""
-    if not query:
-        await update.message.reply_text("Використання: /search <запит>")
-        return
-
-    vector_store = context.bot_data.get("vector_store")
-    if vector_store is not None:
-        import asyncio
-        from vault_writer.rag.engine import search_vault
-        from telegram.formatter import format_semantic_search_results
-        try:
-            loop = asyncio.get_running_loop()
-            results = await loop.run_in_executor(
-                None, search_vault, query, vector_store, config.embedding.top_k_results
-            )
-            await update.message.reply_text(format_semantic_search_results(results, query))
-            return
-        except Exception as exc:
-            logger.warning("Semantic search failed, falling back to keyword: %s", exc)
-            from telegram.formatter import format_search_degraded_notice
-            await update.message.reply_text(format_search_degraded_notice())
-
-    # Fallback: keyword search
-    from vault_writer.tools.search_notes import handle_search_notes
-    index = context.bot_data["index"]
-    result = handle_search_notes(query=query, limit=10, folder=None, index=index, vault_path=config.vault.path)
-    from telegram.formatter import format_search_results
-    await update.message.reply_text(format_search_results(result.get("results", []), query))
 
 
 async def cmd_reindex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

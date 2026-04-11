@@ -36,33 +36,6 @@ def merge_confirm_keyboard() -> InlineKeyboardMarkup:
     ]])
 
 
-def settings_keyboard(config) -> InlineKeyboardMarkup:
-    """Inline keyboard for toggling key bot settings."""
-    def _flag(val: bool) -> str:
-        return "✅" if val else "❌"
-
-    rows = [
-        [InlineKeyboardButton(
-            f"{_flag(config.git.auto_commit)} Auto-commit",
-            callback_data="settings:toggle:git.auto_commit",
-        )],
-        [InlineKeyboardButton(
-            f"{_flag(config.enrichment_add_wikilinks)} Wikilinks",
-            callback_data="settings:toggle:enrichment_add_wikilinks",
-        ),
-        InlineKeyboardButton(
-            f"{_flag(config.enrichment_update_moc)} MoC",
-            callback_data="settings:toggle:enrichment_update_moc",
-        )],
-        [InlineKeyboardButton(
-            f"{_flag(config.schedule.daily_summary_enabled)} Daily summary",
-            callback_data="settings:toggle:schedule.daily_summary_enabled",
-        )],
-        [InlineKeyboardButton("✖️ Close", callback_data="settings:close")],
-    ]
-    return InlineKeyboardMarkup(rows)
-
-
 def youtube_save_confirm() -> InlineKeyboardMarkup:
     """Confirm / edit / discard before saving YouTube session."""
     return InlineKeyboardMarkup([[
@@ -70,3 +43,120 @@ def youtube_save_confirm() -> InlineKeyboardMarkup:
         InlineKeyboardButton("✏️ Edit first",   callback_data="yt_save_edit"),
         InlineKeyboardButton("❌ Discard",      callback_data="yt_end"),
     ]])
+
+
+# ── Settings keyboards ────────────────────────────────────────────────────────
+
+def settings_main_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📝 Notes",     callback_data="settings:page:notes"),
+            InlineKeyboardButton("📅 Schedules", callback_data="settings:page:schedules"),
+        ],
+        [
+            InlineKeyboardButton("🤖 AI",        callback_data="settings:page:ai"),
+            InlineKeyboardButton("🌐 Language",  callback_data="settings:page:language"),
+        ],
+        [InlineKeyboardButton("✖️ Close", callback_data="settings:close")],
+    ])
+
+
+def settings_notes_keyboard(config) -> InlineKeyboardMarkup:
+    def _f(v: bool) -> str:
+        return "✅" if v else "❌"
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            f"{_f(config.git.auto_commit)} Auto-commit git",
+            callback_data="settings:toggle:git.auto_commit",
+        )],
+        [
+            InlineKeyboardButton(
+                f"{_f(config.enrichment_add_wikilinks)} Wikilinks",
+                callback_data="settings:toggle:enrichment_add_wikilinks",
+            ),
+            InlineKeyboardButton(
+                f"{_f(config.enrichment_update_moc)} MoC",
+                callback_data="settings:toggle:enrichment_update_moc",
+            ),
+        ],
+        [InlineKeyboardButton("← Back", callback_data="settings:page:main")],
+    ])
+
+
+def settings_schedules_keyboard(config) -> InlineKeyboardMarkup:
+    def _f(v: bool) -> str:
+        return "✅" if v else "❌"
+
+    s = config.schedule
+    daily_t  = s.daily_summary_time.strftime("%H:%M")
+    weekly_t = s.weekly_review_time.strftime("%H:%M")
+    monthly_t = s.monthly_review_time.strftime("%H:%M")
+
+    _DAY_ABBR = {
+        "monday": "Mon", "tuesday": "Tue", "wednesday": "Wed",
+        "thursday": "Thu", "friday": "Fri", "saturday": "Sat", "sunday": "Sun",
+    }
+    day_abbr = _DAY_ABBR.get(s.weekly_review_day.lower(), s.weekly_review_day[:3])
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                f"{_f(s.daily_summary_enabled)} Daily  {daily_t}",
+                callback_data="settings:toggle:schedule.daily_summary_enabled",
+            ),
+            InlineKeyboardButton("✏️ time", callback_data="settings:ask:schedule.daily_summary_time"),
+        ],
+        [
+            InlineKeyboardButton(
+                f"{_f(s.weekly_review_enabled)} Weekly  {day_abbr} {weekly_t}",
+                callback_data="settings:toggle:schedule.weekly_review_enabled",
+            ),
+            InlineKeyboardButton("✏️ time", callback_data="settings:ask:schedule.weekly_review_time"),
+        ],
+        [
+            InlineKeyboardButton(
+                f"{_f(s.monthly_review_enabled)} Monthly  {s.monthly_review_day}th {monthly_t}",
+                callback_data="settings:toggle:schedule.monthly_review_enabled",
+            ),
+            InlineKeyboardButton("✏️ time", callback_data="settings:ask:schedule.monthly_review_time"),
+        ],
+        [InlineKeyboardButton("← Back", callback_data="settings:page:main")],
+    ])
+
+
+def settings_ai_keyboard(config) -> InlineKeyboardMarkup:
+    p = config.ai.provider
+
+    def _mark(v: str) -> str:
+        return f"✓ {v}" if v == p else v
+
+    model_label = config.ai.model if len(config.ai.model) <= 24 else config.ai.model[:22] + "…"
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(_mark("anthropic"),   callback_data="settings:set:ai.provider:anthropic"),
+            InlineKeyboardButton(_mark("ollama"),      callback_data="settings:set:ai.provider:ollama"),
+            InlineKeyboardButton(_mark("claude_code"), callback_data="settings:set:ai.provider:claude_code"),
+        ],
+        [InlineKeyboardButton(
+            f"Model: {model_label}  ✏️",
+            callback_data="settings:ask:ai.model",
+        )],
+        [InlineKeyboardButton("← Back", callback_data="settings:page:main")],
+    ])
+
+
+def settings_language_keyboard(config) -> InlineKeyboardMarkup:
+    locale = config.locale
+
+    def _mark(v: str, label: str) -> str:
+        return f"✓ {label}" if v == locale else label
+
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(_mark("uk", "🇺🇦 Українська"), callback_data="settings:set:locale:uk"),
+            InlineKeyboardButton(_mark("en", "🇬🇧 English"),     callback_data="settings:set:locale:en"),
+        ],
+        [InlineKeyboardButton("← Back", callback_data="settings:page:main")],
+    ])

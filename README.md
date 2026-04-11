@@ -1,8 +1,50 @@
-# 🧠 BrainSync
+```
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ██████╗ ██████╗  █████╗ ██╗███╗  ██╗
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⢀⣀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ██╔══██╗██╔══██╗██╔══██╗██║████╗ ██║
+⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣆⠘⠿⠟⢻⣿⣿⡇⢐⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀   ██████╔╝██████╔╝███████║██║██╔██╗██║
+⠀⠀⠀⠀⢸⣿⣿⣿⣧⡄⠙⣿⣷⣶⣶⡿⠿⠿⢃⣼⡟⠻⣿⣿⣶⡄⠀⠀⠀⠀   ██╔══██╗██╔══██╗██╔══██║██║██║╚████║
+⠀⠀⢰⣷⣌⠙⠉⣿⣿⡟⢀⣿⣿⡟⢁⣤⣤⣶⣾⣿⡇⠸⢿⣿⠿⢃⣴⡄⠀⠀   ██████╔╝██║  ██║██║  ██║██║██║ ╚███║
+⠀⠀⢸⣿⣿⣿⣿⠿⠋⣠⣾⣿⣿⠀⣾⣿⣿⣛⠛⢿⣿⣶⣤⣤⣴⣿⣿⣿⡆⠀   ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚══╝
+⠀⣴⣤⣄⣀⣠⣤⣴⣾⣿⣿⣿⣿⣆⠘⠿⣿⣿⣷⡄⢹⣿⣿⠿⠟⢿⣿⣿⣿⠀
+⠀⢸⣿⣿⡿⠛⠛⣻⣿⣿⣿⣿⣿⣿⣷⣦⣼⣿⣿⠃⣸⣿⠃⢰⣶⣾⣿⣿⡟⠀   ███████╗██╗   ██╗███╗  ██╗ ██████╗
+⠀⠀⢿⡏⢠⣾⣿⣿⡿⠋⣠⣄⡉⢻⣿⣿⡿⠟⠁⠀⠛⠛⠀⠘⠿⠿⠿⠋⠀⠀   ██╔════╝╚██╗ ██╔╝████╗ ██║██╔════╝
+⠀⠀⠀⠁⠘⢿⣿⣿⣷⣤⣿⣿⠗⠀⣉⣥⣴⣶⡶⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ███████╗ ╚████╔╝ ██╔██╗██║██║
+⠀⠀⠀⠀⣤⣀⡉⠛⠛⠋⣉⣠⣴⠿⢿⣿⠿⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ╚════██║  ╚██╔╝  ██║╚████║██║
+⠀⠀⠀⠀⠈⠻⢿⣿⣿⣿⣿⡿⠋⣠⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ███████║   ██║   ██║ ╚███║╚██████╗
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⡾⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   ╚══════╝   ╚═╝   ╚═╝  ╚══╝ ╚═════╝
+```
+
+# BrainSync
 
 **Local AI-powered personal knowledge management via Telegram.**
 
 Send a message, voice note, photo, PDF, or YouTube link → AI classifies, formats, and saves it as a structured Markdown note in your Obsidian vault. Ask questions about your notes in natural language — the bot searches your vault semantically and answers using only your own knowledge. Everything runs locally, nothing leaves your machine except optional AI API calls.
+
+---
+
+## ⚡ Quick Start
+
+> Full prerequisites and configuration details are in the sections below.
+
+```bash
+git clone https://github.com/vvvolodymyrPanasiuk/BrainSync.git
+cd BrainSync
+python start.py          # Windows / macOS / Linux — universal launcher
+```
+
+On first run the launcher installs `uv`, syncs dependencies, and opens the interactive setup wizard.
+After that it starts the bot automatically.
+
+**Checklist before first run:**
+
+| Step | What to do |
+|------|-----------|
+| 1 | [Create a Telegram bot](#prerequisites) via [@BotFather](https://t.me/BotFather) → `/newbot`, copy the token |
+| 2 | Get your Telegram user ID from [@userinfobot](https://t.me/userinfobot) |
+| 3 | Install [Claude Code CLI](https://claude.ai/download) — `claude --version` to verify |
+| 4 | Install ffmpeg — `winget install ffmpeg` / `brew install ffmpeg` / `sudo apt install ffmpeg` |
+| 5 | Have an [Ollama](https://ollama.com) instance running **or** an Anthropic API key ready |
+| 6 | After the bot is running, [register commands in BotFather](#botfather-command-setup) |
 
 ---
 
@@ -130,25 +172,61 @@ notebooklm login    # one-time Google auth via browser
 
 ## Installation
 
-### Option A: One-click (Windows)
+### Option A: Universal Python launcher (recommended — Windows / macOS / Linux)
 
 ```bash
 git clone https://github.com/vvvolodymyrPanasiuk/BrainSync.git
 cd BrainSync
+python start.py
 ```
 
-Double-click **`start.bat`**. The script installs `uv`, creates a virtual environment, installs dependencies, and launches the setup wizard on first run.
+`start.py` auto-installs `uv`, syncs dependencies, runs the setup wizard on first run, then launches the bot. Works on any OS with Python 3.12+ in PATH.
 
-### Option B: Manual
+### Option B: Shell scripts
+
+```bash
+# macOS / Linux
+chmod +x start.sh
+./start.sh
+
+# Windows — double-click start.bat, or in terminal:
+start.bat
+```
+
+### Option C: Manual
 
 ```bash
 git clone https://github.com/vvvolodymyrPanasiuk/BrainSync.git
 cd BrainSync
 pip install uv
 uv sync
-uv run python setup.py    # interactive setup wizard
-uv run python main.py
+uv run python setup.py   # interactive setup wizard — creates config.yaml
+uv run python main.py    # opens the control dashboard
 ```
+
+---
+
+## How startup works
+
+```
+python start.py
+      │
+      ├─ installs uv, syncs deps
+      ├─ runs setup.py on first launch → creates config.yaml
+      │
+      └─ opens main.py dashboard ──────────────────────────────────────────
+              │
+              │  [1] Start bot / Stop bot
+              │  [2] Edit config.yaml (opens in editor)
+              │  [3] Full config details
+              │  [4] Re-run setup wizard
+              │  [5] Exit
+              │
+              └─ Start bot → spawns bot_runner.py (own window on Windows)
+```
+
+On **Windows**, the bot runs in its own dedicated console window.
+On **macOS / Linux**, the bot runs as a background subprocess.
 
 ---
 
@@ -208,6 +286,29 @@ The wizard creates `config.yaml` (gitignored — never committed).
 | `/reload` | Hot-reload `config.yaml` without restarting the bot |
 | `/reindex` | Rebuild the vector index from all vault notes |
 | `/help` | Full command reference |
+
+---
+
+## BotFather command setup
+
+After creating your bot, register the commands so they appear in the Telegram command picker.
+
+1. Open [@BotFather](https://t.me/BotFather) → send `/setcommands`
+2. Select your bot
+3. Paste this block **exactly** (one command per line, no leading slash):
+
+```
+clip - Fetch a web page, summarise, and save as note
+today - Today's notes + open tasks
+stats - Vault statistics with charts
+settings - Settings menu (AI, schedule, language)
+status - Bot status & AI provider info
+reload - Hot-reload config without restart
+reindex - Rebuild vector search index
+help - Command reference
+```
+
+> **Group / Forum bots:** also send `/setjoingroups` → Enable and `/setprivacy` → Disable so the bot can read all messages in the group.
 
 ---
 
@@ -522,7 +623,9 @@ BrainSync/
 │
 ├── main.py                        # Entry point — starts the Telegram bot
 ├── setup.py                       # Interactive installer / config wizard
-├── start.bat / start.sh           # Launch scripts
+├── start.py                       # Universal launcher (Windows / macOS / Linux)
+├── start.bat                      # Windows convenience double-click launcher
+├── start.sh                       # macOS / Linux shell launcher
 ├── config.yaml                    # Generated by setup.py — gitignored
 │
 ├── config/
