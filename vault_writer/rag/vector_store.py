@@ -109,7 +109,7 @@ class VectorStore:
             path = _parent_path(doc_id)
             sim  = round(max(0.0, 1.0 - distance), 4)
             if path not in seen or sim > seen[path].similarity:
-                seen[path] = SearchResult(file_path=path, excerpt=(document or "")[:300], similarity=sim)
+                seen[path] = SearchResult(file_path=path, excerpt=(document or "")[:_CHUNK_SIZE], similarity=sim)
         out = sorted(seen.values(), key=lambda r: -r.similarity)[:top_k]
         logger.info("search: '%.50s' → %d results, top=%.2f", query, len(out), out[0].similarity if out else 0.0)
         return out

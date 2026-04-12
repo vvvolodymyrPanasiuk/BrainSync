@@ -264,7 +264,7 @@ async def _vault_snippets(message: str, vector_store, config) -> list[str]:
             path = getattr(r, "file_path", None)
             excerpt = getattr(r, "excerpt", "") or ""
             if path and excerpt.strip():
-                snippets.append(f"[{path}]\n{excerpt[:500]}")
+                snippets.append(f"[{path}]\n{excerpt[:600]}")
         return snippets
     except Exception as exc:
         logger.warning("executor: vault snippet search failed: %s", exc)
