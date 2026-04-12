@@ -14,9 +14,15 @@ from vault_writer.vault.writer import NoteType
 
 logger = logging.getLogger(__name__)
 
+_SPLIT_THRESHOLD = 3900    # chars near Telegram's 4096 limit → likely a split part
+_BUFFER_TIMEOUT  = 5.0     # seconds to wait for more parts before processing
+_MAX_BUFFER      = 200_000 # hard cap: flush immediately if exceeded
+_BUF_KEY         = "_msg_buf"
+_BUF_UPD_KEY     = "_msg_buf_upd"
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Route plain-text Telegram message: auth → AI semantic router → executor."""
+    """Route plain-text Telegram message; accumulate split parts before processing."""
     from telegram.handlers.commands import auth_check
     config = context.bot_data["config"]
     if not auth_check(update, config):
@@ -25,6 +31,50 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     text = update.message.text or ""
     if not text.strip():
         return
+
+    user_id = update.effective_user.id
+
+    # Short message + no active buffer → skip buffering (zero extra latency)
+    if len(text) < _SPLIT_THRESHOLD and not context.user_data.get(_BUF_KEY):
+        await _process_message(update, context, text)
+        return
+
+    # Accumulate
+    buf = context.user_data.setdefault(_BUF_KEY, [])
+    buf.append(text)
+    context.user_data[_BUF_UPD_KEY] = update
+
+    # Cancel any pending flush for this user
+    for job in context.job_queue.get_jobs_by_name(f"_flush_{user_id}"):
+        job.schedule_removal()
+
+    if sum(len(x) for x in buf) >= _MAX_BUFFER:
+        merged = "\n".join(context.user_data.pop(_BUF_KEY))
+        context.user_data.pop(_BUF_UPD_KEY, None)
+        await _process_message(update, context, merged)
+        return
+
+    context.job_queue.run_once(
+        _flush_job,
+        _BUFFER_TIMEOUT,
+        name=f"_flush_{user_id}",
+        user_id=user_id,
+        chat_id=update.effective_chat.id,
+    )
+
+
+async def _flush_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """PTB job: merge buffered message parts and process as one."""
+    buf    = context.user_data.pop(_BUF_KEY, [])
+    update = context.user_data.pop(_BUF_UPD_KEY, None)
+    if not buf or update is None:
+        return
+    await _process_message(update, context, "\n".join(buf))
+
+
+async def _process_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> None:
+    """Core message handler (receives final merged text)."""
+    config = context.bot_data["config"]
 
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id, action=ChatAction.TYPING
@@ -207,26 +257,39 @@ def _format_save_result(result: dict, config) -> str:
 async def _reply_with_retry(
     update: Update, text: str, max_attempts: int = 3, keyboard=None
 ) -> None:
-    """Send reply with optional InlineKeyboardMarkup and exponential backoff."""
+    """Send reply, splitting into multiple messages if text exceeds 4000 chars."""
     from telegram.constants import ParseMode
-    for attempt in range(max_attempts):
-        try:
-            await update.message.reply_text(
-                text,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=keyboard,
-            )
-            return
-        except RetryAfter as exc:
-            wait = exc.retry_after if attempt < max_attempts - 1 else None
-            if wait is None:
-                await update.message.reply_text("⚠️ Telegram API тимчасово недоступний.")
+    _MAX = 4000
+    # Split on newlines where possible
+    parts: list[str] = []
+    while len(text) > _MAX:
+        split_at = text.rfind("\n", 0, _MAX)
+        if split_at <= 0:
+            split_at = _MAX
+        parts.append(text[:split_at])
+        text = text[split_at:].lstrip("\n")
+    parts.append(text)
+
+    for i, part in enumerate(parts):
+        kb = keyboard if i == len(parts) - 1 else None
+        for attempt in range(max_attempts):
+            try:
+                await update.message.reply_text(
+                    part,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=kb,
+                )
+                break
+            except RetryAfter as exc:
+                wait = exc.retry_after if attempt < max_attempts - 1 else None
+                if wait is None:
+                    await update.message.reply_text("⚠️ Telegram API тимчасово недоступний.")
+                    return
+                logger.warning("RetryAfter: waiting %ss (attempt %d)", wait, attempt + 1)
+                await asyncio.sleep(wait)
+            except Exception as exc:
+                logger.error("reply_text failed: %s", exc)
                 return
-            logger.warning("RetryAfter: waiting %ss (attempt %d)", wait, attempt + 1)
-            await asyncio.sleep(wait)
-        except Exception as exc:
-            logger.error("reply_text failed: %s", exc)
-            return
 
 
 def _is_bare_url(text: str) -> bool:

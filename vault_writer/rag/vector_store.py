@@ -10,8 +10,28 @@ from vault_writer.rag.engine import SearchResult, SimilarityNotice
 
 logger = logging.getLogger(__name__)
 
-_COLLECTION_NAME = "vault_notes"
-_RRF_K = 60  # standard RRF constant
+_COLLECTION_NAME  = "vault_notes"
+_RRF_K            = 60    # standard RRF constant
+_CHUNK_THRESHOLD  = 1500  # chars: docs longer than this get split
+_CHUNK_SIZE       = 600   # chars per chunk
+_CHUNK_OVERLAP    = 100   # chars overlap between adjacent chunks
+_CHUNK_SEP        = "::chunk_"
+
+
+def _split_chunks(content: str) -> list[str]:
+    chunks, start = [], 0
+    while start < len(content):
+        end = min(start + _CHUNK_SIZE, len(content))
+        chunks.append(content[start:end])
+        if end == len(content):
+            break
+        start = end - _CHUNK_OVERLAP
+    return chunks
+
+
+def _parent_path(doc_id: str) -> str:
+    """Return original file path, stripping ::chunk_N suffix if present."""
+    return doc_id.split(_CHUNK_SEP)[0] if _CHUNK_SEP in doc_id else doc_id
 
 
 class VectorStore:
@@ -33,52 +53,66 @@ class VectorStore:
             logger.info("VectorStore initialised empty index at %s", index_path)
 
     def upsert_note(self, file_path: str, content: str) -> None:
-        """Embed and upsert a note; skip vector update if content hash unchanged."""
-        content_hash = hashlib.sha256(content.encode()).hexdigest()
-        existing = self._collection.get(ids=[file_path], include=["metadatas"])
-        if existing["ids"] and existing["metadatas"][0].get("hash") == content_hash:
-            logger.debug("upsert_note: unchanged hash, skipping vector update for %s", file_path)
-        else:
-            embeddings = self._embedder.embed([content])
-            self._collection.upsert(
-                ids=[file_path],
-                embeddings=embeddings,
-                documents=[content],
-                metadatas=[{"hash": content_hash, "path": file_path}],
-            )
-            logger.debug("upsert_note: indexed %s (hash=%s)", file_path, content_hash[:8])
-        # Always keep BM25 in sync (fast, no embeddings)
+        """Embed and upsert a note. Long docs are split into overlapping chunks."""
+        # BM25 always indexes the full document
         self._bm25.upsert(file_path, content)
 
+        if len(content) <= _CHUNK_THRESHOLD:
+            self._upsert_single(file_path, content, file_path)
+        else:
+            # Remove any previous entries for this path, then index chunks
+            self._delete_from_collection(file_path)
+            for i, chunk in enumerate(_split_chunks(content)):
+                self._upsert_single(f"{file_path}{_CHUNK_SEP}{i}", chunk, file_path)
+            logger.debug("upsert_note: %s → %d chunks", file_path, len(_split_chunks(content)))
+
+    def _upsert_single(self, doc_id: str, content: str, path: str) -> None:
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        existing = self._collection.get(ids=[doc_id], include=["metadatas"])
+        if existing["ids"] and existing["metadatas"][0].get("hash") == content_hash:
+            return
+        self._collection.upsert(
+            ids=[doc_id],
+            embeddings=self._embedder.embed([content]),
+            documents=[content],
+            metadatas=[{"hash": content_hash, "path": path}],
+        )
+
+    def _delete_from_collection(self, file_path: str) -> None:
+        """Delete the whole-doc entry AND any chunk entries for file_path."""
+        try:
+            res = self._collection.get(where={"path": file_path}, include=[])
+            if res["ids"]:
+                self._collection.delete(ids=res["ids"])
+        except Exception:
+            pass
+
     def search(self, query: str, top_k: int) -> list[SearchResult]:
-        """Semantic search over vault notes. Returns ranked SearchResult list."""
-        if self._collection.count() == 0:
+        """Semantic search. Chunks are deduplicated to parent paths."""
+        total = self._collection.count()
+        if total == 0:
             return []
         embeddings = self._embedder.embed([query])
+        # Fetch more than top_k so deduplication doesn't starve results
+        n = min(top_k * 4, total)
         results = self._collection.query(
             query_embeddings=embeddings,
-            n_results=min(top_k, self._collection.count()),
+            n_results=n,
             include=["documents", "metadatas", "distances"],
         )
-        search_results = []
-        ids = results.get("ids", [[]])[0]
+        ids       = results.get("ids", [[]])[0]
         documents = results.get("documents", [[]])[0]
         distances = results.get("distances", [[]])[0]
+        # Keep best chunk per parent path
+        seen: dict[str, SearchResult] = {}
         for doc_id, document, distance in zip(ids, documents, distances):
-            similarity = max(0.0, 1.0 - distance)
-            excerpt = document[:300] if document else ""
-            search_results.append(SearchResult(
-                file_path=doc_id,
-                excerpt=excerpt,
-                similarity=round(similarity, 4),
-            ))
-        logger.info(
-            "search: query='%.50s' returned %d results, top_similarity=%.2f",
-            query,
-            len(search_results),
-            search_results[0].similarity if search_results else 0.0,
-        )
-        return search_results
+            path = _parent_path(doc_id)
+            sim  = round(max(0.0, 1.0 - distance), 4)
+            if path not in seen or sim > seen[path].similarity:
+                seen[path] = SearchResult(file_path=path, excerpt=(document or "")[:300], similarity=sim)
+        out = sorted(seen.values(), key=lambda r: -r.similarity)[:top_k]
+        logger.info("search: '%.50s' → %d results, top=%.2f", query, len(out), out[0].similarity if out else 0.0)
+        return out
 
     def find_similar(
         self,
@@ -101,13 +135,16 @@ class VectorStore:
         notices = []
         ids = results.get("ids", [[]])[0]
         distances = results.get("distances", [[]])[0]
+        seen_paths: set[str] = set()
         for doc_id, distance in zip(ids, distances):
-            if doc_id == exclude_path:
+            path = _parent_path(doc_id)
+            if path == exclude_path or path in seen_paths:
                 continue
+            seen_paths.add(path)
             similarity = max(0.0, 1.0 - distance)
             if similarity >= related_threshold:
                 notices.append(SimilarityNotice(
-                    matched_path=doc_id,
+                    matched_path=path,
                     similarity=round(similarity, 4),
                     is_duplicate=similarity >= duplicate_threshold,
                 ))
@@ -120,8 +157,8 @@ class VectorStore:
         return notices
 
     def delete_note(self, file_path: str) -> None:
-        """Remove a note from the vector and BM25 indexes."""
-        self._collection.delete(ids=[file_path])
+        """Remove a note (and all its chunks) from vector and BM25 indexes."""
+        self._delete_from_collection(file_path)
         self._bm25.delete(file_path)
         logger.debug("delete_note: removed %s", file_path)
 
