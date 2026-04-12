@@ -1,21 +1,29 @@
-"""Vault health check: orphan notes, broken wikilinks, missing aliases, duplicate titles."""
+"""Vault health check: orphan notes, broken wikilinks, missing aliases, duplicate titles,
+isolated notes, topics without MoC, stale notes (LLM-Wiki lint pattern)."""
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 from pathlib import Path
 
 
 _LINK_PAT = re.compile(r'\[\[([^\]|#]+)(?:[|#][^\]]+)?\]\]')
 
+# Notes older than this (days) are flagged as potentially stale
+_STALENESS_DAYS_DEFAULT = 180
 
-def run_health_check(vault_path: str, index) -> dict:
+
+def run_health_check(vault_path: str, index, provider=None, staleness_days: int = _STALENESS_DAYS_DEFAULT) -> dict:
     """Scan vault and return a health report dict.
 
     Returns:
         orphans:      notes with no incoming [[wikilinks]] from other notes
-        broken_links: [[links]] that don't match any existing note title
+        broken_links: [[links]] that don't resolve to any existing note title
         no_aliases:   notes whose frontmatter has no aliases: field
         duplicates:   (title, [path, ...]) pairs with identical titles
+        isolated:     notes with no outgoing [[wikilinks]]
+        topics_no_moc: top-level folders missing a MoC file
+        stale:        notes created > staleness_days ago (potentially outdated)
         total:        total notes scanned
     """
     vault = Path(vault_path)
@@ -54,7 +62,7 @@ def run_health_check(vault_path: str, index) -> dict:
             if ref_lower not in title_to_path:
                 broken.append({"note": note_path, "link": ref})
 
-    # Orphans: note whose title was never referenced
+    # Orphans: note whose title was never referenced by any other note
     orphans = [
         path for path, note in index.notes.items()
         if note.title.lower().strip() not in referenced
@@ -66,10 +74,46 @@ def run_health_check(vault_path: str, index) -> dict:
         counts.setdefault(note.title.lower().strip(), []).append(path)
     duplicates = [(t, paths) for t, paths in counts.items() if len(paths) > 1]
 
+    # Isolated: notes with no outgoing [[wikilinks]]
+    isolated: list[str] = []
+    for path in index.notes:
+        fp = vault / path
+        if not fp.exists():
+            continue
+        try:
+            if "[[" not in fp.read_text(encoding="utf-8", errors="replace"):
+                isolated.append(path)
+        except Exception:
+            pass
+
+    # Topics (top-level folders) missing a MoC file
+    top_folders: set[str] = set()
+    for note in index.notes.values():
+        top = note.folder.split("/")[0] if note.folder else ""
+        if top:
+            top_folders.add(top)
+    topics_no_moc = [
+        f for f in sorted(top_folders)
+        if not (vault / f / f"0 {f}.md").exists() and not (vault / f"{f}.md").exists()
+    ]
+
+    # Stale notes: created more than staleness_days ago
+    cutoff = date.today() - timedelta(days=staleness_days)
+    stale: list[str] = []
+    for path, note in index.notes.items():
+        try:
+            if date.fromisoformat(note.date) < cutoff:
+                stale.append(path)
+        except Exception:
+            continue
+
     return {
         "orphans": orphans,
         "broken_links": broken,
         "no_aliases": no_aliases,
         "duplicates": duplicates,
+        "isolated": isolated,
+        "topics_no_moc": topics_no_moc,
+        "stale": stale,
         "total": index.total_notes,
     }

@@ -13,6 +13,23 @@ from vault_writer.vault.writer import DATA_SUBFOLDER
 logger = logging.getLogger(__name__)
 
 
+def _append_to_log(vault_path: str, title: str, file_path: str, note_type: str, folder: str) -> None:
+    """Append an ingest entry to vault's log.md (LLM-Wiki-style audit trail)."""
+    from datetime import date
+    from pathlib import Path
+    log_path = Path(vault_path) / "log.md"
+    today = date.today().isoformat()
+    entry = f"\n## [{today}] ingest | {title} | {folder}\n\n- File: `{file_path}`\n- Type: {note_type}\n"
+    try:
+        mode = "a" if log_path.exists() else "w"
+        with open(log_path, mode, encoding="utf-8") as f:
+            if mode == "w":
+                f.write("# Vault Ingest Log\n\nAppend-only record of all ingested notes.\n")
+            f.write(entry)
+    except Exception as exc:
+        logger.debug("log.md append failed: %s", exc)
+
+
 def detect_prefix(text: str, prefixes: dict) -> tuple[NoteType | None, str]:
     """Case-insensitive prefix match at start of message. Returns (NoteType|None, stripped_text)."""
     lower = text.lower().lstrip()
@@ -137,6 +154,9 @@ def handle_create_note(
         except Exception as exc:
             logger.warning("update_moc error: %s", exc)
 
+    # ── Ingest log (LLM-Wiki audit trail) ─────────────────────────────────────
+    _append_to_log(config.vault.path, note.title, file_path, classification.note_type.value, classification.folder)
+
     # ── Inverted index (for fast retrolink lookups) ───────────────────────────
     try:
         from vault_writer.ai.linker import update_inverted_index
@@ -178,6 +198,14 @@ def handle_create_note(
             retrolink_to_new_note(note.title, file_path, config.vault.path, index, config)
         except Exception as exc:
             logger.warning("retrolink error: %s", exc)
+
+    # ── Background topic synthesis (LLM-Wiki compiled wiki page) ─────────────
+    if config.enrichment_update_moc and provider is not None:
+        try:
+            from vault_writer.ai.synthesizer import synthesize_topic_background
+            synthesize_topic_background(classification.folder, config.vault.path, provider)
+        except Exception as exc:
+            logger.debug("synthesize_topic_background: %s", exc)
 
     return {
         "success": True,
@@ -296,6 +324,9 @@ def handle_create_note_from_plan(
         except Exception as exc:
             logger.warning("update_moc error: %s", exc)
 
+    # ── Ingest log (LLM-Wiki audit trail) ─────────────────────────────────────
+    _append_to_log(config.vault.path, title, file_path, note_type.value, full_folder)
+
     # ── Register folder in vault structure index ──────────────────────────────
     try:
         from vault_writer.vault.structure import register_folder
@@ -341,6 +372,14 @@ def handle_create_note_from_plan(
             retrolink_to_new_note(title, file_path, config.vault.path, index, config)
         except Exception as exc:
             logger.warning("retrolink error: %s", exc)
+
+    # ── Background topic synthesis (LLM-Wiki compiled wiki page) ─────────────
+    if config.enrichment_update_moc and provider is not None:
+        try:
+            from vault_writer.ai.synthesizer import synthesize_topic_background
+            synthesize_topic_background(full_folder, config.vault.path, provider)
+        except Exception as exc:
+            logger.debug("synthesize_topic_background: %s", exc)
 
     return {
         "success": True,

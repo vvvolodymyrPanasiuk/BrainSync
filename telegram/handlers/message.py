@@ -161,9 +161,16 @@ async def _process_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
     except Exception:
         pass
 
+    # ── Conversation context ──────────────────────────────────────────────────
+    from vault_writer.ai.context_manager import (
+        to_prompt_block, add_user_turn, add_assistant_turn,
+        needs_compaction, detect_topic_shift, compact as compact_ctx,
+    )
+    history_block = to_prompt_block(context.user_data)
+
     # ── AI Semantic Router ────────────────────────────────────────────────────
     try:
-        plan = await _route(text, provider, index, config.vault.language)
+        plan = await _route(text, provider, index, config.vault.language, history_block)
         # Search intents require an explicit ? prefix — redirect to chat otherwise
         from vault_writer.ai.router import Intent as _Intent
         _SEARCH_INTENTS = {
@@ -204,8 +211,34 @@ async def _process_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
         except Exception:
             pass
 
+    # ── Update conversation history ───────────────────────────────────────────
+    full_folder = "/".join(p for p in [
+        getattr(plan, "general_category", ""),
+        getattr(plan, "target_folder", ""),
+    ] if p)
+    add_user_turn(context.user_data, text, intent=plan.intent.value, folder=full_folder)
     if reply:
-        await _reply_with_retry(update, reply, keyboard=keyboard)
+        add_assistant_turn(context.user_data, reply, intent=plan.intent.value, folder=full_folder)
+
+    # ── Topic shift detection → auto-compact ──────────────────────────────────
+    compacted_notice = ""
+    if detect_topic_shift(context.user_data, full_folder) or needs_compaction(context.user_data):
+        loop2 = asyncio.get_running_loop()
+        await loop2.run_in_executor(None, compact_ctx, context.user_data, provider)
+        compacted_notice = "\n\n_💬 Контекст розмови стиснуто (нова тема або ліміт досягнуто)._"
+
+    if reply:
+        # Attach "💡 Save as note" only for vault-sourced synthesis answers (LLM-Wiki novelty gate):
+        # - ANSWER_FROM_VAULT with actual results → AI synthesized from the user's own notes → worth saving
+        # - CHAT_ONLY → generic AI knowledge, not personal insight → skip
+        from vault_writer.ai.router import Intent as _Intent
+        if plan.intent == _Intent.ANSWER_FROM_VAULT and keyboard is None and len(reply) > 120:
+            context.user_data["last_insight"] = reply
+            from telegram.keyboards import save_insight_keyboard
+            keyboard = save_insight_keyboard()
+        await _reply_with_retry(update, reply + compacted_notice, keyboard=keyboard)
+    elif compacted_notice:
+        await _reply_with_retry(update, compacted_notice.strip())
 
     # Git commit if a note was saved
     if plan.should_save and stats.last_note_path and config.git.enabled and config.git.auto_commit:
@@ -214,11 +247,13 @@ async def _process_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
 
 # ── Routing ───────────────────────────────────────────────────────────────────
 
-async def _route(text: str, provider, index, locale: str = "en") -> object:
+async def _route(text: str, provider, index, locale: str = "en", history_block: str = "") -> object:
     """Run AI router in executor. Raises on failure — caller handles the error."""
     from vault_writer.ai.router import route
+    import functools
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, route, text, provider, index, locale)
+    fn = functools.partial(route, text, provider, index, locale, history_block)
+    return await loop.run_in_executor(None, fn)
 
 
 # ── Legacy note creation (used by prefix path and /commands) ─────────────────
@@ -479,6 +514,11 @@ async def _handle_forced_search(
             pass
 
     if reply:
+        # Attach "Save as note" button to vault and combined answers
+        if mode in ("vault", "combined") and keyboard is None:
+            context.user_data["last_insight"] = reply
+            from telegram.keyboards import save_insight_keyboard
+            keyboard = save_insight_keyboard()
         await _reply_with_retry(update, reply, keyboard=keyboard)
 
 

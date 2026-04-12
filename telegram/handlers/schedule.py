@@ -53,6 +53,20 @@ async def daily_summary_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     await _send_to_user(context, "\n".join(lines))
 
 
+async def weekly_index_rebuild_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Rebuild vault/index.md catalog weekly (LLM-Wiki pattern)."""
+    config = context.bot_data["config"]
+    index  = context.bot_data["index"]
+    try:
+        import asyncio
+        from vault_writer.tools.index_builder import rebuild_index_md
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, rebuild_index_md, config.vault.path, index)
+        logger.info("schedule: vault index.md rebuilt (%d notes)", index.total_notes)
+    except Exception as exc:
+        logger.warning("weekly_index_rebuild_job: %s", exc)
+
+
 async def weekly_summary_job(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send weekly report: notes by topic, most active days, open tasks + PNG chart."""
     index = context.bot_data["index"]

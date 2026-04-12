@@ -62,6 +62,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "web_search_progress":     "🌐 Searching the web…",
         "combined_search_progress": "🔍🌐 Searching vault and web…",
         "chat_web_disclaimer":    "_ℹ️ General answer — Claude Code may have used web search. Use `?` to search only your vault._",
+        "insight_novel_save":  "💡 Save synthesis to vault",
+        "lint_stale_header":   "🕰 *Stale notes* ({count}) — older than 180 days:\n",
+        "lint_contra_none":    "✅ No contradictions found between notes.",
+        "lint_contra_header":  "⚠️ *{count} contradiction(s) found:*\n",
+        "index_rebuilt":       "📑 vault/index.md rebuilt ({total} notes).",
+        "synthesis_done":      "🔄 Topic synthesis updated: {topic}",
         "help_text": (
             "📋 *BrainSync commands*\n\n"
             "Just send a message — AI will classify and save it automatically.\n"
@@ -76,10 +82,14 @@ STRINGS: dict[str, dict[str, str]] = {
             "`/clip <url>` — fetch & summarise a web page\n"
             "`/today` — today's notes + open tasks\n"
             "`/stats` — vault statistics with charts\n"
+            "`/lint` — vault health check + fix actions (LLM-Wiki lint)\n"
+            "`/notebooklm` — generate presentations, podcasts, slides from vault notes\n"
             "`/settings` — toggle auto-commit, wikilinks, MoC, summaries\n"
             "`/status` — bot status & AI provider info\n"
             "`/reload` — hot-reload config without restart\n"
-            "`/reindex` — rebuild vector search index\n"
+            "`/reindex` — rebuild vector index + global index.md\n"
+            "`/compact` — summarise & clear conversation context\n"
+            "`/newchat` — hard reset conversation context\n"
             "`/help` — this message\n"
         ),
     },
@@ -141,6 +151,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "web_search_progress":     "🌐 Шукаю в інтернеті…",
         "combined_search_progress": "🔍🌐 Шукаю у vault та в інтернеті…",
         "chat_web_disclaimer":    "_ℹ️ Загальна відповідь — Claude Code міг використати пошук в інтернеті. Щоб шукати лише у vault, використай `?`._",
+        "insight_novel_save":  "💡 Зберегти синтез у vault",
+        "lint_stale_header":   "🕰 *Застарілі нотатки* ({count}) — старші 180 днів:\n",
+        "lint_contra_none":    "✅ Суперечностей між нотатками не знайдено.",
+        "lint_contra_header":  "⚠️ *Знайдено {count} суперечностей:*\n",
+        "index_rebuilt":       "📑 vault/index.md оновлено ({total} нотаток).",
+        "synthesis_done":      "🔄 Синтез теми оновлено: {topic}",
         "help_text": (
             "📋 *Команди BrainSync*\n\n"
             "Просто надішли повідомлення — AI автоматично класифікує та збереже його.\n"
@@ -155,10 +171,14 @@ STRINGS: dict[str, dict[str, str]] = {
             "`/clip <url>` — завантажити та узагальнити веб-сторінку\n"
             "`/today` — нотатки за сьогодні + відкриті завдання\n"
             "`/stats` — статистика vault із графіками\n"
+            "`/lint` — перевірка vault + кнопки виправлення (LLM-Wiki lint)\n"
+            "`/notebooklm` — генерувати презентації, подкасти, слайди з нотаток\n"
             "`/settings` — перемкнути auto-commit, wikilinks, MoC, дайджест\n"
             "`/status` — статус бота та AI провайдера\n"
             "`/reload` — перезавантажити config без перезапуску\n"
-            "`/reindex` — перебудувати індекс пошуку\n"
+            "`/reindex` — перебудувати індекс пошуку + index.md\n"
+            "`/compact` — узагальнити та очистити контекст розмови\n"
+            "`/newchat` — повне скидання контексту розмови\n"
             "`/help` — це повідомлення\n"
         ),
     },

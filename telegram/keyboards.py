@@ -20,6 +20,59 @@ def duplicate_actions() -> InlineKeyboardMarkup:
     ]])
 
 
+def lint_actions_keyboard(
+    topics_no_moc: list,
+    isolated: list,
+    orphans: list,
+    stale: list | None = None,
+) -> InlineKeyboardMarkup | None:
+    """Action buttons shown below lint report — only for fixable issues."""
+    rows = []
+    row1 = []
+    if topics_no_moc:
+        row1.append(InlineKeyboardButton(
+            f"✅ Створити MoC ({len(topics_no_moc)})",
+            callback_data="lint_create_moc",
+        ))
+    if isolated:
+        row1.append(InlineKeyboardButton(
+            f"🔗 Додати links ({len(isolated)})",
+            callback_data="lint_enrich_isolated",
+        ))
+    if row1:
+        rows.append(row1)
+
+    row2 = []
+    if orphans:
+        row2.append(InlineKeyboardButton(
+            f"👁 Показати orphans ({len(orphans)})",
+            callback_data="lint_show_orphans",
+        ))
+    if stale:
+        row2.append(InlineKeyboardButton(
+            f"🕰 Застарілі ({len(stale)})",
+            callback_data="lint_show_stale",
+        ))
+    if row2:
+        rows.append(row2)
+
+    # Contradiction scan is always offered (AI-powered, on demand)
+    rows.append([InlineKeyboardButton(
+        "⚠️ Знайти суперечності (AI)",
+        callback_data="lint_contradictions",
+    )])
+
+    return InlineKeyboardMarkup(rows) if rows else None
+
+
+def save_insight_keyboard() -> InlineKeyboardMarkup:
+    """Shown after a RAG/chat answer — lets user save it as a vault note."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("💡 Зберегти як нотатку", callback_data="insight_save"),
+        InlineKeyboardButton("✖️ Скасувати",            callback_data="insight_discard"),
+    ]])
+
+
 def youtube_chat_actions() -> InlineKeyboardMarkup:
     """Persistent action bar during an active YouTube session."""
     return InlineKeyboardMarkup([[

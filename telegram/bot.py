@@ -24,17 +24,22 @@ def build_application(config, index, stats, provider, vector_store=None) -> Appl
 
     # Command handlers
     from telegram.handlers.commands import (
-        cmd_clip, cmd_help, cmd_reindex, cmd_reload,
-        cmd_settings, cmd_stats, cmd_status, cmd_today,
+        cmd_clip, cmd_compact, cmd_help, cmd_lint, cmd_newchat,
+        cmd_reindex, cmd_reload, cmd_settings, cmd_stats, cmd_status, cmd_today,
     )
-    app.add_handler(CommandHandler("clip",     cmd_clip))
-    app.add_handler(CommandHandler("today",    cmd_today))
-    app.add_handler(CommandHandler("stats",    cmd_stats))
-    app.add_handler(CommandHandler("settings", cmd_settings))
-    app.add_handler(CommandHandler("status",   cmd_status))
-    app.add_handler(CommandHandler("reload",   cmd_reload))
-    app.add_handler(CommandHandler("reindex",  cmd_reindex))
-    app.add_handler(CommandHandler("help",     cmd_help))
+    from telegram.handlers.notebooklm_cmd import cmd_notebooklm
+    app.add_handler(CommandHandler("clip",        cmd_clip))
+    app.add_handler(CommandHandler("today",       cmd_today))
+    app.add_handler(CommandHandler("stats",       cmd_stats))
+    app.add_handler(CommandHandler("settings",    cmd_settings))
+    app.add_handler(CommandHandler("status",      cmd_status))
+    app.add_handler(CommandHandler("reload",      cmd_reload))
+    app.add_handler(CommandHandler("reindex",     cmd_reindex))
+    app.add_handler(CommandHandler("lint",        cmd_lint))
+    app.add_handler(CommandHandler("notebooklm",  cmd_notebooklm))
+    app.add_handler(CommandHandler("compact",     cmd_compact))
+    app.add_handler(CommandHandler("newchat",     cmd_newchat))
+    app.add_handler(CommandHandler("help",        cmd_help))
 
     # Inline keyboard callback handler
     from telegram.handlers.callbacks import handle_callback
@@ -78,6 +83,7 @@ def _register_scheduled_jobs(app: Application, config) -> None:
     from telegram.handlers.schedule import (
         daily_summary_job, monthly_summary_job,
         stale_task_reminder_job, weekly_summary_job,
+        weekly_index_rebuild_job,
     )
 
     jq = app.job_queue
@@ -109,3 +115,7 @@ def _register_scheduled_jobs(app: Application, config) -> None:
 
     if config.schedule.stale_task_reminder_enabled:
         jq.run_daily(stale_task_reminder_job, time=config.schedule.stale_task_reminder_time)
+
+    # Rebuild vault/index.md every Sunday at 03:00 (LLM-Wiki global catalog)
+    from datetime import time as _t
+    jq.run_daily(weekly_index_rebuild_job, time=_t(3, 0), days=(6,))

@@ -126,6 +126,8 @@ Folder names must be written in the VAULT LOCALE defined above.
 CURRENT VAULT FOLDER STRUCTURE:
 {structure_hint}
 
+{history_block}
+
 CONTENT FIELD RULES (for should_save=true intents):
 - "content" must be a well-formatted Obsidian markdown note body (NO frontmatter)
 - Use three sections with headers translated to VAULT LOCALE: Description, Conclusions, Links
@@ -146,7 +148,7 @@ CRITICAL RULES:
 VAULT TOPICS AVAILABLE:
 {topics_hint}
 
-USER MESSAGE:
+{history_block}
 {message}
 
 Return ONLY the JSON object."""
@@ -202,14 +204,32 @@ def _extract_json(raw: str) -> dict:
     raise ValueError(f"No JSON in response: {raw[:200]!r}")
 
 
-def route(message: str, provider, vault_index=None, locale: str = "en") -> ActionPlan:
+def route(
+    message: str,
+    provider,
+    vault_index=None,
+    locale: str = "en",
+    history_block: str = "",
+) -> ActionPlan:
     """Semantically route message via AI. Raises on any failure — no fallback."""
     topics_hint = _topics_hint(vault_index)
     structure_hint = _structure_hint(vault_index)
+
+    if history_block.strip():
+        formatted_history = (
+            "CONVERSATION HISTORY (use for context — pronouns, references, follow-ups):\n"
+            + history_block
+            + "\n─────────────────────────────────────────\n"
+            "Analyze THIS new message (do NOT re-save anything already in history):"
+        )
+    else:
+        formatted_history = "USER MESSAGE:"
+
     prompt = (
         _ROUTER_SYSTEM
         .replace("{locale}", locale)
         .replace("{structure_hint}", structure_hint)
+        .replace("{history_block}", formatted_history)
         .replace("{topics_hint}", topics_hint)
         .replace("{message}", message)
     )

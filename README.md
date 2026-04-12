@@ -103,6 +103,14 @@ BrainSync solves two problems: **capture** and **retrieval**.
 - **Hot reload** — `/reload` reloads `config.yaml` without restarting the bot
 - **MCP server** — exposes vault operations to Claude Code sessions
 
+### Conversation Context
+
+- **Rolling history** — the last 14 turns are stored per-user in PTB `user_data` and injected into every AI router call so pronoun references ("це", "попередня нотатка") and follow-ups stay coherent across messages
+- **Auto-compaction** — when total history exceeds ~5 000 chars, the AI summarises it into bullet points and replaces the raw turns with the summary (no user action needed)
+- **Topic-shift compaction** — if the last 2 assistant turns belong to a different top-level vault folder than the new message, context is compacted automatically to avoid polluting a new topic with stale history
+- **`/compact`** — manually trigger AI summarise + clear turn history
+- **`/newchat`** — hard reset: wipe history and summary for a completely fresh start
+
 ### UX
 
 - **Progress indicator** — `⏳ Thinking…` message shown during AI processing, deleted when result arrives
@@ -237,6 +245,7 @@ The wizard creates `config.yaml` (gitignored — never committed).
 | `/clip <url>` | Fetch a web page, AI-summarise, and save as note |
 | `/today` | Today's saved notes + all open tasks |
 | `/stats` | Vault statistics with bar/line charts (PNG if matplotlib installed) |
+| `/notebooklm` | Generate artifacts from your vault notes via Google NotebookLM |
 
 ### System
 
@@ -245,7 +254,10 @@ The wizard creates `config.yaml` (gitignored — never committed).
 | `/settings` | Inline settings menu — AI provider, schedules, language, wikilinks, MoC, auto-commit |
 | `/status` | Bot status, session stats, AI provider info |
 | `/reload` | Hot-reload `config.yaml` without restarting the bot |
-| `/reindex` | Rebuild the vector index from all vault notes |
+| `/reindex` | Rebuild the vector index from all vault notes + regenerate `vault/index.md` |
+| `/lint` | LLM-Wiki-style vault health check: orphans, broken links, isolated notes, topics without MoC |
+| `/compact` | AI-summarise conversation context and clear turn history |
+| `/newchat` | Hard-reset conversation context (start fresh) |
 | `/help` | Full command reference |
 
 > **No commands for saving notes** — just send a plain message and the AI router decides what to do. Use inline prefixes (`note:`, `task:`, `idea:`, `journal:`) to force a specific type without AI routing.
@@ -264,10 +276,14 @@ After creating your bot, register the commands so they appear in the Telegram co
 clip - Fetch a web page, summarise, and save as note
 today - Today's notes + open tasks
 stats - Vault statistics with charts
+notebooklm - Generate slides, podcasts, infographics from vault notes
 settings - AI provider, schedules, language, enrichment options
 status - Bot status and AI provider info
 reload - Hot-reload config without restart
 reindex - Rebuild vector search index
+lint - Vault health check: orphans, broken links, isolated notes
+compact - Summarise and clear conversation context
+newchat - Hard reset conversation context
 help - Command reference
 ```
 
@@ -329,6 +345,38 @@ Attach `.txt` or `.md` → content saved as note directly.
 
 ### YouTube URLs
 Send a bare YouTube URL → BrainSync creates a NotebookLM notebook, adds the video as source, and enters interactive Q&A mode. Each message in the session is answered by NotebookLM. Press **💾 Save to vault** to save the session as a note; the notebook is deleted after save. Requires `notebooklm-py`.
+
+### `/notebooklm` — Generate from vault notes
+
+Send `/notebooklm` followed by what you want and which topic:
+
+```
+/notebooklm зроби презентацію по моїх нотатках про CQRS
+/notebooklm згенеруй подкаст по темі Event Sourcing
+/notebooklm зроби інфографіку по нотатках про Python async
+/notebooklm створи квіз по темі Docker
+/notebooklm mind map по нотатках про архітектуру
+```
+
+What happens:
+1. Bot finds relevant vault notes on the requested topic via hybrid search
+2. Sends them to Google NotebookLM as sources
+3. Generates the requested artifact
+4. Returns the result file (PDF, MP3, PNG, etc.)
+
+**Available output types:**
+
+| You ask for | NotebookLM generates | File |
+|-------------|---------------------|------|
+| Презентація / slide deck | Slide deck | `.pdf` / `.pptx` |
+| Подкаст / podcast | Audio overview | `.mp3` |
+| Інфографіка / infographic | Visual summary | `.png` |
+| Mind map | Mind map | `.json` |
+| Квіз / quiz | Quiz | `.md` |
+| Флешкарти / flashcards | Flashcards | `.md` |
+| Звіт / report | Study guide / briefing | `.md` |
+
+**Requires:** `notebooklm-py` installed and Google account authenticated — see [Optional dependencies](#prerequisites).
 
 ### Bare URLs (web clip)
 Send any `https://...` URL that isn't YouTube → BrainSync fetches the page, extracts text, AI-summarises into a structured note, and saves it.

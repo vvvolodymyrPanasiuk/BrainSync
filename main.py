@@ -102,6 +102,11 @@ def _hr(char: str = "─", width: int = 56) -> None:
     print(char * width)
 
 
+def _notebooklm_auth_ok() -> bool:
+    """True if notebooklm session cookies are saved on this machine."""
+    return (Path.home() / ".notebooklm" / "storage_state.json").exists()
+
+
 def _dashboard(config) -> str:
     """Dashboard loop. Manages bot subprocess. Returns 'setup' or 'exit'."""
     bot_proc: subprocess.Popen | None = None
@@ -129,6 +134,12 @@ def _dashboard(config) -> str:
             print(status_line)
         except UnicodeEncodeError:
             print("  Status:  [running]" if bot_running else "  Status:  [stopped]")
+
+        if not _notebooklm_auth_ok():
+            try:
+                print("  Warning: 🔑 NotebookLM not authenticated — run /notebooklm in Claude Code to set up")
+            except UnicodeEncodeError:
+                print("  Warning: NotebookLM not authenticated — run /notebooklm in Claude Code to set up")
 
         _hr()
         print()

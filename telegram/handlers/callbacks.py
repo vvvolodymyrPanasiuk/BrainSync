@@ -176,6 +176,66 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await end_session(update, context)
         return
 
+    # ── Save RAG/chat insight as a vault note ─────────────────────────────────
+    if data == "insight_save":
+        await query.edit_message_reply_markup(reply_markup=None)
+        insight_text = context.user_data.pop("last_insight", None)
+        if not insight_text:
+            await query.message.reply_text("❌ Текст відповіді вже недоступний.")
+            return
+        config       = context.bot_data["config"]
+        index        = context.bot_data["index"]
+        stats        = context.bot_data["stats"]
+        provider     = context.bot_data.get("provider")
+        vector_store = context.bot_data.get("vector_store")
+        import asyncio
+        from vault_writer.tools.create_note import handle_create_note
+        from vault_writer.vault.writer import NoteType
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, handle_create_note,
+            insight_text, NoteType.NOTE, None,
+            config, index, stats, provider, vector_store,
+        )
+        if result.get("success"):
+            from telegram.formatter import format_confirmation
+            await query.message.reply_text(format_confirmation(result["file_path"]))
+            if config.git.enabled and config.git.auto_commit:
+                try:
+                    from git_sync.sync import commit_note
+                    commit_note(config.vault.path, result["file_path"], config.git)
+                except Exception:
+                    pass
+        else:
+            await query.message.reply_text(f"❌ Помилка збереження: {result.get('error')}")
+        return
+
+    if data == "insight_discard":
+        context.user_data.pop("last_insight", None)
+        await query.edit_message_reply_markup(reply_markup=None)
+        return
+
+    # ── Lint actions ──────────────────────────────────────────────────────────
+    if data == "lint_create_moc":
+        await _lint_create_moc(update, context)
+        return
+
+    if data == "lint_enrich_isolated":
+        await _lint_enrich_isolated(update, context)
+        return
+
+    if data == "lint_show_orphans":
+        await _lint_show_orphans(update, context)
+        return
+
+    if data == "lint_show_stale":
+        await _lint_show_stale(update, context)
+        return
+
+    if data == "lint_contradictions":
+        await _lint_contradictions(update, context)
+        return
+
     logger.debug("callbacks: unhandled data=%r", data)
 
 
@@ -233,6 +293,232 @@ async def _handle_settings(update, context, sub: str) -> None:
         await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text(prompt)
         return
+
+
+# ── Lint action handlers ──────────────────────────────────────────────────────
+
+async def _lint_create_moc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Create MoC files for all topics reported as missing."""
+    query = update.callback_query
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    report = context.user_data.get("lint_report", {})
+    topics = report.get("topics_no_moc", [])
+    if not topics:
+        await query.message.reply_text("Немає тем без MoC.")
+        return
+
+    config = context.bot_data["config"]
+    from vault_writer.vault.writer import create_moc_if_missing
+    created = []
+    for topic in topics:
+        try:
+            path = create_moc_if_missing(topic, config.vault.path)
+            created.append(f"  · `{path}`")
+            logger.info("lint: created MoC for %s → %s", topic, path)
+        except Exception as exc:
+            logger.warning("lint: MoC creation failed for %s: %s", topic, exc)
+
+    if created:
+        await query.message.reply_text(
+            f"✅ Створено {len(created)} MoC:\n" + "\n".join(created),
+            parse_mode="Markdown",
+        )
+        if config.git.enabled and config.git.auto_commit:
+            try:
+                from git_sync.sync import commit_note
+                for path in created:
+                    raw = path.strip().strip("`")
+                    commit_note(config.vault.path, raw, config.git)
+            except Exception:
+                pass
+    else:
+        await query.message.reply_text("❌ Не вдалось створити жодного MoC.")
+
+
+async def _lint_enrich_isolated(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run AI wikilink enrichment on isolated notes (those with no outgoing links)."""
+    query = update.callback_query
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    report   = context.user_data.get("lint_report", {})
+    isolated = report.get("isolated", [])
+    if not isolated:
+        await query.message.reply_text("Немає ізольованих нотаток.")
+        return
+
+    provider     = context.bot_data.get("provider")
+    vector_store = context.bot_data.get("vector_store")
+    config       = context.bot_data["config"]
+    index        = context.bot_data["index"]
+
+    if provider is None:
+        await query.message.reply_text("❌ AI provider недоступний.")
+        return
+
+    progress = await query.message.reply_text(
+        f"🔗 Додаю wikilinks до {len(isolated)} ізольованих нотаток…"
+    )
+
+    import asyncio
+    from pathlib import Path
+    from vault_writer.ai.linker import enrich_with_links
+
+    vault = Path(config.vault.path)
+    enriched, failed = 0, 0
+
+    for rel_path in isolated:
+        fp = vault / rel_path
+        if not fp.exists():
+            continue
+        try:
+            original = fp.read_text(encoding="utf-8")
+            loop = asyncio.get_running_loop()
+            enriched_content = await loop.run_in_executor(
+                None, enrich_with_links,
+                original, index, vector_store, provider, config, rel_path,
+            )
+            if enriched_content != original:
+                fp.write_text(enriched_content, encoding="utf-8")
+                if vector_store:
+                    vector_store.upsert_note(rel_path, enriched_content)
+                enriched += 1
+        except Exception as exc:
+            logger.warning("lint enrich isolated: %s → %s", rel_path, exc)
+            failed += 1
+
+    await progress.delete()
+    msg = f"✅ Збагачено {enriched} нотаток wikilinks."
+    if failed:
+        msg += f" ({failed} помилок)"
+    await query.message.reply_text(msg)
+
+
+async def _lint_show_orphans(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show content of orphaned notes (no incoming links) for manual review."""
+    query = update.callback_query
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    report  = context.user_data.get("lint_report", {})
+    orphans = report.get("orphans", [])
+    if not orphans:
+        await query.message.reply_text("Немає orphaned нотаток.")
+        return
+
+    config = context.bot_data["config"]
+    from pathlib import Path
+    vault = Path(config.vault.path)
+
+    lines = [f"👁 *Orphaned нотатки* ({len(orphans)}) — ніхто не посилається:\n"]
+    for rel_path in orphans[:10]:
+        fp = vault / rel_path
+        name = Path(rel_path).name
+        excerpt = ""
+        if fp.exists():
+            try:
+                content = fp.read_text(encoding="utf-8", errors="replace")
+                # Skip frontmatter
+                if content.startswith("---"):
+                    end = content.find("---", 3)
+                    content = content[end + 3:].strip() if end != -1 else content
+                excerpt = content[:120].replace("\n", " ").strip()
+            except Exception:
+                pass
+        lines.append(f"📄 `{name}`")
+        if excerpt:
+            lines.append(f"   _{excerpt}…_")
+        lines.append("")
+
+    if len(orphans) > 10:
+        lines.append(f"_… ще {len(orphans) - 10} нотаток_")
+
+    lines.append("\n💡 Для кожної: перемісти, злий з іншою або видали вручну.")
+    await query.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def _lint_show_stale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show notes that haven't been updated in > 180 days."""
+    query = update.callback_query
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    report = context.user_data.get("lint_report", {})
+    stale  = report.get("stale", [])
+    if not stale:
+        await query.message.reply_text("Немає застарілих нотаток.")
+        return
+
+    config = context.bot_data["config"]
+    index  = context.bot_data["index"]
+    from pathlib import Path
+
+    lines = [f"🕰 *Застарілі нотатки* ({len(stale)}) — старші 180 днів:\n"]
+    for rel_path in stale[:15]:
+        note = index.notes.get(rel_path)
+        title = note.title if note else Path(rel_path).stem
+        date  = note.date  if note else "?"
+        lines.append(f"  · `{date}` — {title}")
+
+    if len(stale) > 15:
+        lines.append(f"\n_… ще {len(stale) - 15}_")
+
+    lines.append(
+        "\n💡 Розгляни: переглянь кожну нотатку, оновіть висновки або видали якщо неактуальна."
+    )
+    await query.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def _lint_contradictions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """AI-powered contradiction scan across the vault's largest topic folders."""
+    query    = update.callback_query
+    provider = context.bot_data.get("provider")
+    config   = context.bot_data["config"]
+    index    = context.bot_data["index"]
+
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    if provider is None:
+        await query.message.reply_text("❌ AI provider недоступний.")
+        return
+
+    progress = await query.message.reply_text("⚠️ Шукаю семантичні суперечності між нотатками (AI)…")
+
+    import asyncio
+    from vault_writer.ai.synthesizer import check_all_contradictions
+    loop = asyncio.get_running_loop()
+    try:
+        contradictions = await loop.run_in_executor(
+            None, check_all_contradictions, index, config.vault.path, provider, 5
+        )
+    except Exception as exc:
+        logger.error("lint_contradictions: %s", exc)
+        await progress.delete()
+        await query.message.reply_text(f"❌ Помилка: {exc}")
+        return
+
+    await progress.delete()
+
+    if not contradictions:
+        await query.message.reply_text("✅ Суперечностей між нотатками не знайдено.")
+        return
+
+    lines = [f"⚠️ *Знайдено {len(contradictions)} суперечностей:*\n"]
+    for c in contradictions[:8]:
+        folder = c.get("folder", "?")
+        note_a = c.get("note_a", "?")
+        note_b = c.get("note_b", "?")
+        summary = c.get("summary", "")
+        claim_a = c.get("claim_a", "")
+        claim_b = c.get("claim_b", "")
+        lines.append(f"📁 *{folder}*")
+        lines.append(f"  «{note_a}» vs «{note_b}»")
+        if claim_a and claim_b:
+            lines.append(f"  _{claim_a}_ ↔ _{claim_b}_")
+        elif summary:
+            lines.append(f"  _{summary}_")
+        lines.append("")
+
+    lines.append("💡 Переглянь ці нотатки і виправ або об'єднай суперечливі твердження.")
+    await query.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
 async def handle_settings_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:

@@ -460,6 +460,141 @@ async def cmd_reindex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except Exception as exc:
         logger.error("cmd_reindex error: %s", exc)
         await update.message.reply_text("❌ Embedding backend недоступний. Перевірте налаштування.")
+        return
+
+    # Rebuild global index.md catalog (LLM-Wiki pattern)
+    index = context.bot_data["index"]
+    try:
+        from vault_writer.tools.index_builder import rebuild_index_md
+        await loop.run_in_executor(None, rebuild_index_md, config.vault.path, index)
+        await update.message.reply_text("📑 index.md оновлено.")
+    except Exception as exc:
+        logger.warning("cmd_reindex: index.md rebuild failed: %s", exc)
+
+
+async def cmd_lint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """LLM-Wiki-style vault health check: orphans, broken links, isolated, missing MoC, stale notes."""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+
+    progress = await update.message.reply_text("🔍 Сканую vault…")
+    index = context.bot_data["index"]
+
+    import asyncio
+    from vault_writer.tools.health import run_health_check
+    loop = asyncio.get_running_loop()
+    report = await loop.run_in_executor(None, run_health_check, config.vault.path, index)
+
+    orphans       = report.get("orphans", [])
+    broken        = report.get("broken_links", [])
+    isolated      = report.get("isolated", [])
+    topics_no_moc = report.get("topics_no_moc", [])
+    dupes         = report.get("duplicates", [])
+    stale         = report.get("stale", [])
+    total         = report.get("total", 0)
+
+    lines = [f"🔬 *Vault Lint* — {total} нотаток\n"]
+
+    if orphans:
+        lines.append(f"🔴 *Orphaned* ({len(orphans)}) — жодна нотатка не посилається:")
+        for p in orphans[:5]:
+            lines.append(f"  · `{p}`")
+        if len(orphans) > 5:
+            lines.append(f"  … ще {len(orphans)-5}")
+        lines.append("")
+
+    if broken:
+        lines.append(f"🔴 *Зламані wikilinks* ({len(broken)}):")
+        for item in broken[:5]:
+            lines.append(f"  · `[[{item['link']}]]` в `{item['note']}`")
+        if len(broken) > 5:
+            lines.append(f"  … ще {len(broken)-5}")
+        lines.append("")
+
+    if isolated:
+        lines.append(f"🟡 *Ізольовані* ({len(isolated)}) — немає жодного вихідного посилання:")
+        for p in isolated[:5]:
+            lines.append(f"  · `{p}`")
+        if len(isolated) > 5:
+            lines.append(f"  … ще {len(isolated)-5}")
+        lines.append("")
+
+    if topics_no_moc:
+        lines.append(f"🟡 *Теми без MoC* ({len(topics_no_moc)}):")
+        for t in topics_no_moc:
+            lines.append(f"  · {t}")
+        lines.append("")
+
+    if dupes:
+        lines.append(f"🟠 *Дублі заголовків* ({len(dupes)}):")
+        for title, paths in dupes[:3]:
+            lines.append(f"  · \"{title}\" ({len(paths)} копій)")
+        if len(dupes) > 3:
+            lines.append(f"  … ще {len(dupes)-3}")
+        lines.append("")
+
+    if stale:
+        lines.append(f"🕰 *Застарілі* ({len(stale)}) — нотатки старші 180 днів:")
+        for p in stale[:5]:
+            lines.append(f"  · `{p}`")
+        if len(stale) > 5:
+            lines.append(f"  … ще {len(stale)-5}")
+        lines.append("")
+
+    if not any([orphans, broken, isolated, topics_no_moc, dupes, stale]):
+        lines.append("✅ Проблем не знайдено!")
+
+    # Store report for action callbacks
+    context.user_data["lint_report"] = report
+
+    await progress.delete()
+
+    from telegram.keyboards import lint_actions_keyboard
+    keyboard = lint_actions_keyboard(topics_no_moc, isolated, orphans, stale)
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown", reply_markup=keyboard)
+
+
+async def cmd_compact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manually compact (summarise + clear) the conversation history."""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+
+    from vault_writer.ai.context_manager import compact as compact_ctx, get_ctx
+    ctx = get_ctx(context.user_data)
+    if not ctx["turns"] and not ctx.get("summary"):
+        await update.message.reply_text("💬 Контекст розмови порожній — нічого стискати.")
+        return
+
+    provider = context.bot_data.get("provider")
+    if provider is None:
+        # Hard reset without AI summary
+        from vault_writer.ai.context_manager import clear
+        clear(context.user_data)
+        await update.message.reply_text("🗑 Контекст очищено (AI недоступний — без резюме).")
+        return
+
+    import asyncio
+    loop = asyncio.get_running_loop()
+    summary = await loop.run_in_executor(None, compact_ctx, context.user_data, provider)
+    if summary:
+        await update.message.reply_text(
+            f"✅ Контекст стиснуто. Резюме:\n\n{summary}",
+            parse_mode="Markdown",
+        )
+    else:
+        await update.message.reply_text("✅ Контекст очищено.")
+
+
+async def cmd_newchat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Hard reset conversation context — start fresh with no history."""
+    config = context.bot_data["config"]
+    if not auth_check(update, config):
+        return
+    from vault_writer.ai.context_manager import clear
+    clear(context.user_data)
+    await update.message.reply_text("🆕 Контекст розмови скинуто. Починаємо з чистого аркуша.")
 
 
 def _format_result(result: dict, config) -> str:
